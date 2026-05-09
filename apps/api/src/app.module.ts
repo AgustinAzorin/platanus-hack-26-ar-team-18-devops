@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
 import { PropertiesModule } from './modules/properties/properties.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PropertiesModule } from './modules/properties/properties.module';
     UsersModule,
     PropertiesModule,
     AnalysisModule,
+    SearchModule,
   ],
   providers: [
     {
