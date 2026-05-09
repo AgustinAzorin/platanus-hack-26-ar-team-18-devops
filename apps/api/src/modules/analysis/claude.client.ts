@@ -26,8 +26,8 @@ export class ClaudeClient {
     });
   }
 
-  async analyzeProperty(scrapedData: unknown, url: string): Promise<AnalysisReport> {
-    const userPrompt = buildUserPrompt(scrapedData, url);
+  async analyzeProperty(scrapedData: unknown, url: string, environmentNarrative?: string): Promise<AnalysisReport> {
+    const userPrompt = buildUserPrompt(scrapedData, url, environmentNarrative);
 
     const response = await this.client.messages.create({
       model: MODEL,

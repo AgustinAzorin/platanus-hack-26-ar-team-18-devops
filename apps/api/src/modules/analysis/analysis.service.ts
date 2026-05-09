@@ -11,6 +11,7 @@ import type {
 } from '@repo/types';
 
 import { SupabaseService } from '../../supabase/supabase.service';
+import { EnvironmentService } from '../environment/environment.service';
 import { PropertiesService } from '../properties/properties.service';
 
 import { ClaudeClient } from './claude.client';
@@ -35,6 +36,7 @@ export class AnalysisService {
     private readonly supabase: SupabaseService,
     private readonly properties: PropertiesService,
     private readonly claude: ClaudeClient,
+    private readonly environment: EnvironmentService,
   ) {}
 
   async analyzeByNeighborhood(neighborhood: string): Promise<AnalyzePropertyResponse> {
@@ -56,11 +58,19 @@ export class AnalysisService {
 
     const scrapedForClaude = this.properties.toScrapedForClaude(property);
 
+    const envData = await this.environment.getEnvironmentData(
+      property.address ?? property.neighborhood ?? '',
+      property.neighborhood ?? undefined,
+    );
+    const environmentNarrative = this.environment.formatForPrompt(envData);
+    this.logger.log(`environment data ready for ${cacheKey}${envData.error ? ` (partial: ${envData.error})` : ''}`);
+
     let report: AnalysisReport;
     try {
       report = await this.claude.analyzeProperty(
         scrapedForClaude,
         property.url ?? cacheKey,
+        environmentNarrative,
       );
     } catch (err) {
       this.logger.error(`claude failed for ${cacheKey}: ${(err as Error).message}`);
