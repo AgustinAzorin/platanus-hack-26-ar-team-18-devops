@@ -1,5 +1,5 @@
 import type { User as PrismaUser } from '@repo/database';
-import type { User as ApiUser } from '@repo/types/users';
+import type { User as ApiUser } from '@repo/types';
 
 /**
  * Domain model for users.
