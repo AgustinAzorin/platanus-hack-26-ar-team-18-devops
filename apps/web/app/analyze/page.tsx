@@ -1,15 +1,37 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import type { AnalyzePropertyResponse } from '@repo/types';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { AnalyzePropertyResponse, PropertyData } from '@repo/types';
 
 import { ApiError, apiClient } from '../../lib/api-client';
 
 export default function AnalyzePage() {
-  const [url, setUrl] = useState('');
+  const [neighborhoods, setNeighborhoods] = useState<string[]>([]);
+  const [loadingNeighborhoods, setLoadingNeighborhoods] = useState(true);
+  const [neighborhood, setNeighborhood] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzePropertyResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.analysis
+      .neighborhoods()
+      .then((list) => {
+        if (cancelled) return;
+        setNeighborhoods(list);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(`No pude cargar los barrios: ${(err as Error).message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingNeighborhoods(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -17,7 +39,7 @@ export default function AnalyzePage() {
     setResult(null);
     setLoading(true);
     try {
-      const res = await apiClient.analysis.analyze(url.trim());
+      const res = await apiClient.analysis.analyze(neighborhood);
       setResult(res);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -36,20 +58,37 @@ export default function AnalyzePage() {
     <main style={S.main}>
       <header style={S.header}>
         <h1 style={S.h1}>Análisis de propiedad</h1>
-        <p style={S.subtitle}>Pegá una URL de ZonaProp, MercadoLibre o Argenprop.</p>
+        <p style={S.subtitle}>
+          Elegí un barrio y analizamos la primera propiedad cargada en la base.
+        </p>
       </header>
 
       <form onSubmit={onSubmit} style={S.form}>
-        <input
-          type="url"
+        <select
           required
-          placeholder="https://www.zonaprop.com.ar/propiedades/..."
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={loading}
+          value={neighborhood}
+          onChange={(e) => setNeighborhood(e.target.value)}
+          disabled={loading || loadingNeighborhoods}
           style={S.input}
-        />
-        <button type="submit" disabled={loading || !url.trim()} style={S.button}>
+        >
+          <option value="" disabled>
+            {loadingNeighborhoods
+              ? 'Cargando barrios…'
+              : neighborhoods.length === 0
+                ? 'Sin barrios disponibles'
+                : 'Elegí un barrio'}
+          </option>
+          {neighborhoods.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={loading || !neighborhood}
+          style={S.button}
+        >
           {loading ? 'Analizando…' : 'Analizar'}
         </button>
       </form>
@@ -71,6 +110,8 @@ function Report({ result }: { result: AnalyzePropertyResponse }) {
   const r = result.report;
   return (
     <section style={S.report}>
+      <PropertyCard property={result.property} />
+
       <div style={S.scoreRow}>
         <ScoreBadge score={r.score} />
         <div>
@@ -136,6 +177,73 @@ function Report({ result }: { result: AnalyzePropertyResponse }) {
         <pre style={S.pre}>{JSON.stringify(result, null, 2)}</pre>
       </details>
     </section>
+  );
+}
+
+function PropertyCard({ property }: { property: PropertyData }) {
+  const formatPrice = (value: number | null, type: string | null) => {
+    if (value === null) return 'Precio no disponible';
+    const currency = type === 'USD' ? 'USD' : '$';
+    return `${currency} ${value.toLocaleString('es-AR')}`;
+  };
+  const cover = property.image_urls[0];
+
+  return (
+    <div style={S.propertyCard}>
+      {cover && (
+        <img
+          src={cover}
+          alt={property.address ?? 'propiedad'}
+          style={S.propertyImage}
+          loading="lazy"
+        />
+      )}
+      <div style={S.propertyBody}>
+        <div style={S.propertyHeader}>
+          <h2 style={S.h2}>
+            {property.address ?? property.neighborhood ?? 'Propiedad'}
+          </h2>
+          <p style={S.muted}>
+            {[property.neighborhood, property.city].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div style={S.propertyStats}>
+          <Stat label="Precio" value={formatPrice(property.price_value, property.price_type)} />
+          {property.expenses_value !== null && (
+            <Stat
+              label="Expensas"
+              value={formatPrice(property.expenses_value, property.expenses_type)}
+            />
+          )}
+          {property.square_meters_area !== null && (
+            <Stat label="Superficie" value={`${property.square_meters_area} m²`} />
+          )}
+          {property.rooms !== null && (
+            <Stat label="Ambientes" value={String(property.rooms)} />
+          )}
+          {property.bedrooms !== null && (
+            <Stat label="Dormitorios" value={String(property.bedrooms)} />
+          )}
+          {property.bathrooms !== null && (
+            <Stat label="Baños" value={String(property.bathrooms)} />
+          )}
+        </div>
+        {property.url && (
+          <a href={property.url} target="_blank" rel="noopener noreferrer" style={S.propertyLink}>
+            Ver publicación original ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={S.statCell}>
+      <div style={S.statLabel}>{label}</div>
+      <div style={S.statValue}>{value}</div>
+    </div>
   );
 }
 
@@ -213,6 +321,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     outline: 'none',
     fontFamily: 'inherit',
+    background: '#fff',
   },
   button: {
     padding: '0.75rem 1.5rem',
@@ -300,5 +409,41 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'auto',
     fontSize: '0.8rem',
     marginTop: '0.5rem',
+  },
+  propertyCard: {
+    border: '1px solid #e5e5e5',
+    borderRadius: 8,
+    overflow: 'hidden',
+    background: '#fff',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  propertyImage: {
+    width: '100%',
+    height: 280,
+    objectFit: 'cover',
+    display: 'block',
+    background: '#f5f5f5',
+  },
+  propertyBody: { padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
+  propertyHeader: { display: 'flex', flexDirection: 'column' },
+  propertyStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+    gap: '0.5rem',
+  },
+  statCell: {
+    padding: '0.5rem 0.75rem',
+    background: '#fafafa',
+    border: '1px solid #eee',
+    borderRadius: 6,
+  },
+  statLabel: { fontSize: '0.7rem', textTransform: 'uppercase', color: '#888' },
+  statValue: { fontSize: '0.95rem', fontWeight: 600, marginTop: '0.15rem' },
+  propertyLink: {
+    fontSize: '0.85rem',
+    color: '#1e40af',
+    textDecoration: 'none',
+    alignSelf: 'flex-start',
   },
 };

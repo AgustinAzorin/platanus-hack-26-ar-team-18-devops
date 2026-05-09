@@ -8,9 +8,17 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
+import { PropertiesModule } from './modules/properties/properties.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, SupabaseModule, UsersModule, AnalysisModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    SupabaseModule,
+    UsersModule,
+    PropertiesModule,
+    AnalysisModule,
+  ],
   providers: [
     {
       provide: APP_PIPE,
