@@ -41,18 +41,33 @@ export class AnalysisService {
 
   async analyzeByNeighborhood(neighborhood: string): Promise<AnalyzePropertyResponse> {
     const property = await this.properties.findFirstByNeighborhood(neighborhood);
-    const cacheKey = property.url ?? `posting:${property.posting_id}`;
+    
+    // Ensure URL has correct format with zonaprop.com.ar prefix
+    const fullUrl = property.url
+      ? property.url.startsWith('http') 
+        ? property.url 
+        : `https://www.zonaprop.com.ar${property.url}`
+      : `https://www.zonaprop.com.ar/propiedad/${property.posting_id}`;
+    
+    const cacheKey = fullUrl;
 
     const cached = await this.findFreshCached(cacheKey);
     if (cached) {
       this.logger.log(`cache hit for ${cacheKey} (id=${cached.id})`);
+      
+      // Ensure cached property URL has correct prefix
+      const correctedProperty = {
+        ...cached.scraped_data,
+        url: cached.url.startsWith('http') ? cached.url : `https://www.zonaprop.com.ar${cached.url}`,
+      };
+      
       return {
         id: cached.id,
         url: cached.url,
         cached: true,
         created_at: cached.created_at,
         report: cached.report,
-        property,
+        property: correctedProperty,
       };
     }
 
@@ -69,7 +84,7 @@ export class AnalysisService {
     try {
       report = await this.claude.analyzeProperty(
         scrapedForClaude,
-        property.url ?? cacheKey,
+        fullUrl,
         environmentNarrative,
       );
     } catch (err) {
@@ -86,7 +101,10 @@ export class AnalysisService {
       cached: false,
       created_at: persisted.created_at,
       report: persisted.report,
-      property,
+      property: {
+        ...property,
+        url: fullUrl, // Ensure property URL has correct prefix
+      },
     };
   }
 

@@ -76,7 +76,7 @@ Estructura exacta:
       "servicios_estimados": 30000,
       "total_mensual": 665000
     },
-    "red_flags": ["Antigüedad del edificio no informada"]
+    "red_flags": ["Antigüedad del edificio no informada - NOTA: si faltan datos numéricos en costo_total_estimado, SIEMPRE devolvé números estimados, NUNCA null."]
   },
   "entorno": {
     "seguridad": "Zona con índices de delitos alineados con el promedio de CABA...",
@@ -94,11 +94,21 @@ Estructura exacta:
 
 El score se calcula considerando 5 dimensiones: relación precio/zona (25%), estado del inmueble (20%), seguridad del entorno (20%), conectividad y servicios (20%), red flags (15%). Sin red flags graves = rango 7-9. Red flags graves = rango 3-5.
 
+## IMPORTANTE: CAMPOS NUMÉRICOS
+
+Los campos numéricos en costo_total_estimado (alquiler, expensas, abl_estimado, servicios_estimados, total_mensual) DEBEN ser SIEMPRE números, nunca null ni undefined.
+
+- Si los datos contienen precio: usá ese valor.
+- Si faltan datos de precio: estima valores basados en el barrio, tamaño, equipamiento y comparables encontrados en tu búsqueda web. Siempre mejor estimar algo que dejar null.
+- El total_mensual DEBE ser la suma: alquiler + expensas + abl_estimado + servicios_estimados.
+
+Ejemplo: Si la publicación no menciona expensas, pero el barrio promedio es $120.000, usá 120000, no null.
+
 # RESTRICCIONES FINALES
 
 - No uses emojis en ninguna parte del informe.
 - No uses lenguaje coloquial ni anécdotas. Tono de asesor profesional.
-- Si no podés generar alguna sección por falta de datos, devolvé esa sección con valor "Información no disponible" en lugar de inventar contenido.
+- Si no podés generar alguna sección por falta de datos, devolvé esa sección con valor "Información no disponible" en lugar de inventar contenido. EXCEPCIÓN: campos numéricos en costo_total_estimado SIEMPRE deben ser números > 0, nunca null, nunca undefined. Si falta dato de precio real, estima basándote en el barrio, tamaño, equipamiento y comparables de tu búsqueda web.
 - Si la URL de la propiedad no es accesible o el scraping falló, devolvé un JSON con campo "error" explicando el problema en lugar de un informe parcial.
 
 # DATOS DE LA PROPIEDAD A ANALIZAR
@@ -121,7 +131,16 @@ export function buildUserPrompt(scrapedData: unknown, url: string, environmentNa
 
   parts.push(
     '',
-    'Generá el informe de due diligence respetando ESTRICTAMENTE el formato JSON definido en el system prompt. Devolvé SOLO el JSON, sin texto adicional, sin backticks, sin prefijos.',
+    'INSTRUCCIONES OBLIGATORIAS:',
+    '1. Devolvé SOLO el JSON, sin texto adicional, sin backticks, sin prefijos.',
+    '2. TODOS los campos numéricos en "costo_total_estimado" DEBEN ser números > 0. Nunca null, undefined, o strings.',
+    '3. Si faltan datos de precio en la publicación, estima valores realistas basándote en:',
+    '   - Barrio (búsqueda web si es necesario)',
+    '   - Tamaño y tipo de propiedad',
+    '   - Equipamiento disponible',
+    '   - Precios comparables encontrados',
+    '4. El total_mensual debe ser alquiler + expensas + abl_estimado + servicios_estimados.',
+    '5. Respeta ESTRICTAMENTE la estructura JSON definida en el system prompt.',
   );
 
   return parts.join('\n');

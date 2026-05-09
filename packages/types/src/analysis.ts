@@ -1,11 +1,14 @@
 import { z } from 'zod';
 
+// Accept number, null, or other types and convert to number or default to 0
+const NumberField = z.number().or(z.null().transform(() => 0)).or(z.unknown().transform(() => 0));
+
 export const CostoTotalEstimadoSchema = z.object({
-  alquiler: z.number(),
-  expensas: z.number(),
-  abl_estimado: z.number(),
-  servicios_estimados: z.number(),
-  total_mensual: z.number(),
+  alquiler: NumberField,
+  expensas: NumberField,
+  abl_estimado: NumberField,
+  servicios_estimados: NumberField,
+  total_mensual: NumberField,
 });
 
 export const InmuebleSchema = z.object({
