@@ -7,7 +7,7 @@ import type { AnalysisReport } from '@repo/types';
 import type { Env } from '../../config/env.schema';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts/analysis.prompt';
 
-const MODEL = 'claude-3-5-sonnet-20241022';
+const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 8192;
 const TIMEOUT_MS = 180_000;
 const MAX_RETRIES = 5;
