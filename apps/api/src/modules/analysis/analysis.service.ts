@@ -5,11 +5,12 @@ import {
   Logger,
 } from '@nestjs/common';
 
+import type { AnalysisReport, AnalyzePropertyResponse } from '@repo/types';
+
 import { SupabaseService } from '../../supabase/supabase.service';
 import { ScraperService } from '../scraper/scraper.service';
 
 import { ClaudeClient } from './claude.client';
-import type { AnalysisReport, AnalyzePropertyResponse } from './analysis.types';
 
 const ANALYSES_TABLE = 'analyses';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;

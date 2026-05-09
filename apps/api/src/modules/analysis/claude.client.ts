@@ -2,9 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 
+import type { AnalysisReport } from '@repo/types';
+
 import type { Env } from '../../config/env.schema';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts/analysis.prompt';
-import type { AnalysisReport } from './analysis.types';
 
 const MODEL = 'claude-3-5-sonnet-20241022';
 const MAX_TOKENS = 8192;
@@ -31,7 +32,20 @@ export class ClaudeClient {
     const response = await this.client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: [
+        {
+          type: 'text',
+          text: SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: 5,
+        } satisfies Anthropic.WebSearchTool20250305,
+      ],
       messages: [{ role: 'user', content: userPrompt }],
     });
 
@@ -46,8 +60,8 @@ export class ClaudeClient {
     );
 
     const text = response.content
-      .filter((block: any): block is { type: 'text'; text: string } => block.type === 'text')
-      .map((block: { type: 'text'; text: string }) => block.text)
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
       .join('\n')
       .trim();
 

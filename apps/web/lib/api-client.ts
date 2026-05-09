@@ -1,5 +1,13 @@
-import { UpdateUserSchema, UserSchema } from '@repo/types';
-import type { UpdateUserInput, User } from '@repo/types';
+import {
+  AnalyzePropertyResponseSchema,
+  UpdateUserSchema,
+  UserSchema,
+} from '@repo/types';
+import type {
+  AnalyzePropertyResponse,
+  UpdateUserInput,
+  User,
+} from '@repo/types';
 import type { z } from 'zod';
 
 import { env } from './env';
@@ -48,6 +56,15 @@ export const apiClient = {
         token,
         body: JSON.stringify(UpdateUserSchema.parse(input)),
         schema: UserSchema,
+      });
+    },
+  },
+  analysis: {
+    analyze(url: string): Promise<AnalyzePropertyResponse> {
+      return request('/analysis/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+        schema: AnalyzePropertyResponseSchema,
       });
     },
   },
