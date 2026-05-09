@@ -30,6 +30,7 @@ export const AnalysisReportSchema = z.object({
   score: z.number(),
   score_justificacion: z.string(),
   resumen_ejecutivo: z.string(),
+  visual_description: z.string().optional(),
   inmueble: InmuebleSchema,
   entorno: EntornoSchema,
   preguntas_inmobiliaria: z.array(z.string()),

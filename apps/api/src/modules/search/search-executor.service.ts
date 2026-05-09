@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import type { AnalysisReport } from '@repo/types';
 
+import { VoyageClient } from '../../common/clients/voyage.client';
 import type { Env } from '../../config/env.schema';
 import { SupabaseService } from '../../supabase/supabase.service';
 
@@ -47,6 +48,7 @@ export class SearchExecutorService {
 
   constructor(
     private readonly supabase: SupabaseService,
+    private readonly voyage: VoyageClient,
     config: ConfigService<Env, true>,
   ) {
     this.propertiesTable = config.get('SUPABASE_PROPERTIES_TABLE', { infer: true });
@@ -73,7 +75,25 @@ export class SearchExecutorService {
       return { results: [], notice: 'Las propiedades encontradas no tienen URL válida para cruzar con análisis.' };
     }
 
-    const analyses = await this.queryAnalyses(urls, filters.min_score);
+    // Query analyses with optional vectorial ranking
+    let analyses: AnalysisRow[];
+    if (filters.free_text_query) {
+      try {
+        analyses = await this.queryAnalysesWithEmbedding(
+          urls,
+          filters.free_text_query,
+          filters.min_score,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Vectorial search failed, falling back to score-based: ${(err as Error).message}`,
+        );
+        analyses = await this.queryAnalyses(urls, filters.min_score);
+      }
+    } else {
+      analyses = await this.queryAnalyses(urls, filters.min_score);
+    }
+
     if (analyses.length === 0) {
       return {
         results: [],
@@ -103,7 +123,7 @@ export class SearchExecutorService {
       filtered.push(...merged);
     }
 
-    filtered.sort((a, b) => b.score - a.score);
+    // Results are already sorted by score (queryAnalyses) or similarity (queryAnalysesWithEmbedding)
     return { results: filtered.slice(0, MAX_RESULTS), notice };
   }
 
@@ -154,6 +174,32 @@ export class SearchExecutorService {
       this.logger.error(`failed to query analyses: ${error.message}`);
       throw new InternalServerErrorException(`Failed to query analyses: ${error.message}`);
     }
+    return (data ?? []) as AnalysisRow[];
+  }
+
+  private async queryAnalysesWithEmbedding(
+    urls: string[],
+    freeTextQuery: string,
+    minScore: number | null,
+  ): Promise<AnalysisRow[]> {
+    // Embed the free_text_query
+    const queryEmbedding = await this.voyage.embed(freeTextQuery, 'query');
+
+    // Convert embedding to string format for Supabase RPC or raw query
+    // Using raw SQL with pgvector <==> operator for cosine similarity
+    const { data, error } = await this.supabase.admin.rpc('search_analyses_by_embedding', {
+      query_embedding: queryEmbedding,
+      url_list: urls,
+      min_score: minScore ?? 1,
+      limit_results: MAX_RESULTS,
+    });
+
+    if (error) {
+      // Fallback: if RPC doesn't exist, throw and let caller fall back to score-based search
+      this.logger.warn(`Embedding search RPC failed: ${error.message}`);
+      throw new Error(`Failed to query analyses with embedding: ${error.message}`);
+    }
+
     return (data ?? []) as AnalysisRow[];
   }
 }
