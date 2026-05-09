@@ -20,3 +20,215 @@ model User {
 
   @@map("users")
 }
+
+/// Autores y compositores registrados en el roster de la editorial.
+/// ipiNumber es el identificador CISAC internacional.
+model Artist {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  ipiNumber   String?  @unique @map("ipi_number")
+  email       String?
+  phone       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  works         Work[]
+  contributions WorkContributor[]
+
+  @@map("artist")
+}
+
+/// Obra musical con ISWC, génro, letra y duración.
+model Work {
+  id            String    @id @default(uuid()) @db.Uuid
+  artistId      String    @map("artist_id") @db.Uuid
+  title         String
+  iswc          String?   @unique
+  genre         String?
+  lyrics        String?
+  durationSec   Int?      @map("duration_sec")
+  creationDate  DateTime? @map("creation_date") @db.Date
+  registeredAt  DateTime  @default(now()) @map("registered_at")
+
+  artist        Artist            @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  contributors  WorkContributor[]
+  recordings    Recording[]
+  evidence      Evidence[]
+  licenses      License[]
+  contracts     Contract[]
+  claims        Claim[]
+
+  @@index([artistId], name: "idx_work_artist")
+  @@index([iswc], name: "idx_work_iswc")
+  @@map("work")
+}
+
+/// Porcentaje de autoría de cada colaborador en una obra.
+/// La suma de split_percentage para una obra debe ser 100.
+model WorkContributor {
+  id              String  @id @default(uuid()) @db.Uuid
+  workId          String  @map("work_id") @db.Uuid
+  artistId        String  @map("artist_id") @db.Uuid
+  role            String
+  splitPercentage Decimal @map("split_percentage") @db.Decimal(5, 2)
+
+  work   Work   @relation(fields: [workId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([workId, artistId])
+  @@map("work_contributor")
+}
+
+/// Grabación vinculada a una obra (master, demo, live, etc.).
+model Recording {
+  id            String    @id @default(uuid()) @db.Uuid
+  workId        String    @map("work_id") @db.Uuid
+  isrc          String?   @unique
+  versionLabel  String?   @map("version_label")
+  audioUrl      String?   @map("audio_url")
+  dawProjectUrl String?   @map("daw_project_url")
+  recordedAt    DateTime? @map("recorded_at")
+
+  work             Work              @relation(fields: [workId], references: [id], onDelete: Cascade)
+  platformReleases PlatformRelease[]
+
+  @@index([workId], name: "idx_recording_work")
+  @@index([isrc], name: "idx_recording_isrc")
+  @@map("recording")
+}
+
+/// Archivos de prueba adjuntos a una obra: partitura, demo, contrato, mail, etc.
+/// fileName y fileSize se usan para mostrar en UI sin descargar el archivo.
+model Evidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  workId      String   @map("work_id") @db.Uuid
+  type        String
+  fileName    String?  @map("file_name")
+  fileSize    String?  @map("file_size")
+  fileUrl     String   @map("file_url")
+  description String?
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([workId], name: "idx_evidence_work")
+  @@index([type], name: "idx_evidence_type")
+  @@map("evidence")
+}
+
+/// Autorización de uso de una obra en una plataforma o canal.
+model License {
+  id              String    @id @default(uuid()) @db.Uuid
+  workId          String    @map("work_id") @db.Uuid
+  licenseeName    String    @map("licensee_name")
+  licenseeEmail   String?   @map("licensee_email")
+  platform        String?
+  authorizedFrom  DateTime  @map("authorized_from") @db.Date
+  authorizedUntil DateTime? @map("authorized_until") @db.Date
+  terms           String?
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([workId], name: "idx_license_work")
+  @@map("license")
+}
+
+/// Contrato editorial, sync, distribución, etc.
+model Contract {
+  id           String    @id @default(uuid()) @db.Uuid
+  workId       String    @map("work_id") @db.Uuid
+  partyName    String    @map("party_name")
+  contractType String    @map("contract_type")
+  fileUrl      String    @map("file_url")
+  signedAt     DateTime? @map("signed_at") @db.Date
+  expiresAt    DateTime? @map("expires_at") @db.Date
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([workId], name: "idx_contract_work")
+  @@map("contract")
+}
+
+/// Publicación de una grabación en una plataforma digital (Spotify, YouTube, etc.).
+model PlatformRelease {
+  id           String    @id @default(uuid()) @db.Uuid
+  recordingId  String    @map("recording_id") @db.Uuid
+  platformName String    @map("platform_name")
+  url          String?
+  releasedAt   DateTime? @map("released_at") @db.Date
+  status       String    @default("active")
+
+  recording Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId], name: "idx_platform_rec")
+  @@map("platform_release")
+}
+
+/// Reclamo de una obra sin identificar recibido de CISAC/SADAIC.
+/// Campos de contexto de ejecución (performer, venue, usage, etc.) vienen del reporte SADAIC.
+/// Campos de IA (confidence, matchedAt, matchSignals) los genera el agente al procesar el Excel.
+/// requestedEvidence se llena cuando SADAIC pide documentación adicional.
+model Claim {
+  id                String    @id @default(uuid()) @db.Uuid
+  workId            String?   @map("work_id") @db.Uuid
+  source            String    @default("CISAC")
+  externalRef       String?   @map("external_ref")
+  status            String    @default("pending")
+  cisacWorkTitle    String?   @map("cisac_work_title")
+  performer         String?
+  usage             String?
+  venue             String?
+  executionDate     DateTime? @map("execution_date") @db.Date
+  period            String?
+  amount            Decimal?  @db.Decimal(12, 2)
+  reason            String?
+  deadline          DateTime? @db.Date
+  confidence        Float?
+  matchedAt         DateTime? @map("matched_at")
+  matchSignals      Json?     @map("match_signals")
+  requestedEvidence Json?     @map("requested_evidence")
+  cisacRawData      Json?     @map("cisac_raw_data")
+  receivedAt        DateTime  @default(now()) @map("received_at")
+  resolvedAt        DateTime? @map("resolved_at")
+
+  work     Work?          @relation(fields: [workId], references: [id], onDelete: SetNull)
+  messages ClaimMessage[]
+
+  @@index([workId], name: "idx_claim_work")
+  @@index([status], name: "idx_claim_status")
+  @@index([externalRef], name: "idx_claim_external")
+  @@map("claim")
+}
+
+/// Mensaje del hilo de comunicación de un reclamo (bot ↔ SADAIC).
+/// direction: 'inbound' = de SADAIC, 'outbound' = del bot.
+/// attachments: array JSON de URLs a archivos adjuntos.
+model ClaimMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  claimId     String   @map("claim_id") @db.Uuid
+  direction   String
+  channel     String
+  fromAddress String?  @map("from_address")
+  toAddress   String?  @map("to_address")
+  subject     String?
+  body        String
+  attachments Json?
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId], name: "idx_msg_claim")
+  @@index([direction], name: "idx_msg_direction")
+  @@map("claim_message")
+}
+
+/// Log de actividad del agente autónomo.
+/// kind: 'ingest' | 'match' | 'send' | 'inbound' | 'review' | 'reject'
+model BotLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  kind      String
+  text      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([kind], name: "idx_bot_log_kind")
+  @@map("bot_log")
+}
