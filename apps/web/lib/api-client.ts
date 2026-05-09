@@ -1,10 +1,12 @@
 import {
   AnalyzePropertyResponseSchema,
+  NeighborhoodsResponseSchema,
   UpdateUserSchema,
   UserSchema,
 } from '@repo/types';
 import type {
   AnalyzePropertyResponse,
+  NeighborhoodsResponse,
   UpdateUserInput,
   User,
 } from '@repo/types';
@@ -60,10 +62,16 @@ export const apiClient = {
     },
   },
   analysis: {
-    analyze(url: string): Promise<AnalyzePropertyResponse> {
+    neighborhoods(): Promise<NeighborhoodsResponse> {
+      return request('/analysis/neighborhoods', {
+        method: 'GET',
+        schema: NeighborhoodsResponseSchema,
+      });
+    },
+    analyze(neighborhood: string): Promise<AnalyzePropertyResponse> {
       return request('/analysis/analyze', {
         method: 'POST',
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ neighborhood }),
         schema: AnalyzePropertyResponseSchema,
       });
     },

@@ -1,14 +1,17 @@
 import {
-  BadGatewayException,
   Injectable,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 
-import type { AnalysisReport, AnalyzePropertyResponse } from '@repo/types';
+import type {
+  AnalysisReport,
+  AnalyzePropertyResponse,
+  PropertyData,
+} from '@repo/types';
 
 import { SupabaseService } from '../../supabase/supabase.service';
-import { ScraperService } from '../scraper/scraper.service';
+import { PropertiesService } from '../properties/properties.service';
 
 import { ClaudeClient } from './claude.client';
 
@@ -18,7 +21,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 interface AnalysisRow {
   id: string;
   url: string;
-  scraped_data: unknown;
+  scraped_data: PropertyData;
   report: AnalysisReport;
   score: number;
   created_at: string;
@@ -30,50 +33,50 @@ export class AnalysisService {
 
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly scraper: ScraperService,
+    private readonly properties: PropertiesService,
     private readonly claude: ClaudeClient,
   ) {}
 
-  async analyze(url: string): Promise<AnalyzePropertyResponse> {
-    const cached = await this.findFreshCached(url);
+  async analyzeByNeighborhood(neighborhood: string): Promise<AnalyzePropertyResponse> {
+    const property = await this.properties.findFirstByNeighborhood(neighborhood);
+    const cacheKey = property.url ?? `posting:${property.posting_id}`;
+
+    const cached = await this.findFreshCached(cacheKey);
     if (cached) {
-      this.logger.log(`cache hit for ${url} (id=${cached.id})`);
+      this.logger.log(`cache hit for ${cacheKey} (id=${cached.id})`);
       return {
         id: cached.id,
         url: cached.url,
         cached: true,
         created_at: cached.created_at,
         report: cached.report,
+        property,
       };
     }
 
-    let scraped: unknown;
-    try {
-      scraped = await this.scraper.scrapeProperty(url);
-    } catch (err) {
-      this.logger.error(`scraper failed for ${url}: ${(err as Error).message}`);
-      throw new BadGatewayException(
-        `Failed to scrape property: ${(err as Error).message}`,
-      );
-    }
+    const scrapedForClaude = this.properties.toScrapedForClaude(property);
 
     let report: AnalysisReport;
     try {
-      report = await this.claude.analyzeProperty(scraped, url);
+      report = await this.claude.analyzeProperty(
+        scrapedForClaude,
+        property.url ?? cacheKey,
+      );
     } catch (err) {
-      this.logger.error(`claude failed for ${url}: ${(err as Error).message}`);
+      this.logger.error(`claude failed for ${cacheKey}: ${(err as Error).message}`);
       throw new InternalServerErrorException(
         `Failed to generate analysis: ${(err as Error).message}`,
       );
     }
 
-    const persisted = await this.persist(url, scraped, report);
+    const persisted = await this.persist(cacheKey, property, report);
     return {
       id: persisted.id,
       url: persisted.url,
       cached: false,
       created_at: persisted.created_at,
       report: persisted.report,
+      property,
     };
   }
 
@@ -97,14 +100,14 @@ export class AnalysisService {
 
   private async persist(
     url: string,
-    scrapedData: unknown,
+    property: PropertyData,
     report: AnalysisReport,
   ): Promise<AnalysisRow> {
     const { data, error } = await this.supabase.admin
       .from(ANALYSES_TABLE)
       .insert({
         url,
-        scraped_data: scrapedData,
+        scraped_data: property,
         report,
         score: report.score,
       })
