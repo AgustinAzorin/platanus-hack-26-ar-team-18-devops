@@ -5,46 +5,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    },
-    "./users": {
-      "types": "./src/users.ts",
-      "default": "./src/users.ts"
-    },
-    "./auth": {
-      "types": "./src/auth.ts",
-      "default": "./src/auth.ts"
-    },
-    "./artists": {
-      "types": "./src/artists.ts",
-      "default": "./src/artists.ts"
-    },
-    "./works": {
-      "types": "./src/works.ts",
-      "default": "./src/works.ts"
-    },
-    "./recordings": {
-      "types": "./src/recordings.ts",
-      "default": "./src/recordings.ts"
-    },
-    "./evidence": {
-      "types": "./src/evidence.ts",
-      "default": "./src/evidence.ts"
-    },
-    "./contracts": {
-      "types": "./src/contracts.ts",
-      "default": "./src/contracts.ts"
-    },
-    "./claims": {
-      "types": "./src/claims.ts",
-      "default": "./src/claims.ts"
-    },
-    "./bot-log": {
-      "types": "./src/bot-log.ts",
-      "default": "./src/bot-log.ts"
-    }
+    ".": "./src/index.ts",
+    "./users": "./src/users.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
