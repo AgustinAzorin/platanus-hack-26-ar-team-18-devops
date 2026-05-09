@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import './pending/casita.css';
 
 export const metadata: Metadata = {
   title: 'team-18',
@@ -8,15 +9,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body
-        style={{
-          fontFamily:
-            'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          margin: 0,
-          padding: 0,
-        }}
-      >
+    <html lang="es-AR">
+      <body>
         {children}
       </body>
     </html>
