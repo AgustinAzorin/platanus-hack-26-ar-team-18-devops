@@ -105,15 +105,24 @@ El score se calcula considerando 5 dimensiones: relación precio/zona (25%), est
 
 [ACÁ EL BACKEND INYECTA LOS DATOS SCRAPEADOS Y LOS DATOS DE APIS DE MAPAS]`;
 
-export function buildUserPrompt(scrapedData: unknown, url: string): string {
-  return [
+export function buildUserPrompt(scrapedData: unknown, url: string, environmentNarrative?: string): string {
+  const parts = [
     `URL de la publicación: ${url}`,
     '',
     'Datos scrapeados de la publicación (JSON):',
     '```json',
     JSON.stringify(scrapedData, null, 2),
     '```',
+  ];
+
+  if (environmentNarrative) {
+    parts.push('', environmentNarrative);
+  }
+
+  parts.push(
     '',
     'Generá el informe de due diligence respetando ESTRICTAMENTE el formato JSON definido en el system prompt. Devolvé SOLO el JSON, sin texto adicional, sin backticks, sin prefijos.',
-  ].join('\n');
+  );
+
+  return parts.join('\n');
 }
