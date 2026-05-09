@@ -1,0 +1,334 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { gsap } from 'gsap';
+import { Flip } from 'gsap/Flip';
+import {
+  Search, Layers, MessageSquare, Bell, BarChart2, Wand2,
+  ExternalLink, Check, X,
+} from 'lucide-react';
+
+import type { CardData } from './data';
+
+gsap.registerPlugin(Flip);
+
+const SW = 1.6;
+
+const icons = {
+  search: <Search        size={16} strokeWidth={SW} />,
+  stack:  <Layers        size={16} strokeWidth={SW} />,
+  chat:   <MessageSquare size={16} strokeWidth={SW} />,
+  bell:   <Bell          size={16} strokeWidth={SW} />,
+  spark:  <BarChart2     size={16} strokeWidth={SW} />,
+  wand:   <Wand2         size={16} strokeWidth={SW} />,
+};
+
+const navItems = [
+  { id: 'home',       href: '/home',       label: 'Buscar',         ico: 'search', group: 'principal' },
+  { id: 'feed',       href: '/feed',       label: 'Encontrados',    ico: 'stack',  badge: '24', group: 'principal' },
+  { id: 'chats',      href: '/chats',      label: 'Conversaciones', ico: 'chat',   badge: '8',  group: 'principal' },
+  { id: 'pending',    href: '/pending',    label: 'Pendientes',     ico: 'bell',   badge: '3',  urgent: true, group: 'principal' },
+  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',       ico: 'spark',  group: 'operación' },
+  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',  ico: 'wand',   group: 'operación' },
+] as const;
+
+function Sidebar() {
+  const groups = navItems.reduce<Record<string, typeof navItems[number][]>>((acc, item) => {
+    (acc[item.group] ??= []).push(item);
+    return acc;
+  }, {});
+
+  return (
+    <aside className="side">
+      <div className="brand">
+        <div className="mark">c.</div>
+        <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
+        <div className="meta">v0.4</div>
+      </div>
+
+      {Object.entries(groups).map(([group, items]) => (
+        <div key={group}>
+          <div className="group-label">{group}</div>
+          <div className="nav">
+            {items.map((item) => (
+              <a
+                key={item.id}
+                href={item.href}
+                className={`${item.id === 'pending' ? 'active' : ''} ${'urgent' in item && item.urgent ? 'urgent' : ''}`}
+              >
+                <span className="ico">{icons[item.ico as keyof typeof icons]}</span>
+                <span>{item.label}</span>
+                {'badge' in item && item.badge && (
+                  <span className="badge">{item.badge}</span>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="side-foot">
+        <div className="user">
+          <div className="avatar">M</div>
+          <div className="who">
+            Martina Ríos
+            <small>Plan agente · BA</small>
+          </div>
+          <div className="status" title="Bot activo" />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function Topbar({ count }: { count: number }) {
+  return (
+    <div className="topbar">
+      <div className="crumb">
+        <b>Pendientes</b>
+        <span style={{ color: 'var(--fg-3)', margin: '0 8px' }}>/</span>
+        {count > 0 ? `${count} esperando OK` : 'Todo al día'}
+      </div>
+      <div className="right">
+        <div className="pill">
+          <span className="pulse" />
+          BOT ACTIVO · 3 búsquedas
+        </div>
+        <a href="/chats" className="btn btn-ghost">Ver chats</a>
+      </div>
+    </div>
+  );
+}
+
+const CARD_W   = 280;
+const CARD_H   = 400;
+const CARD_OFF = 18;
+const MAX_VIS  = 5;
+
+interface PendingClientProps {
+  initialCards: CardData[];
+}
+
+export default function PendingClient({ initialCards }: PendingClientProps) {
+  const [cards, setCards] = useState<CardData[]>(initialCards);
+  const [busy,  setBusy ] = useState(false);
+  const dragRef = useRef({ startX: 0, active: false });
+
+  useEffect(() => {
+    gsap.defaults({ ease: 'power3.out' });
+    gsap.from('.side',       { x: -24, autoAlpha: 0, duration: 1.0 });
+    gsap.from('.topbar',     { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.15 });
+    gsap.from('.sw-scene',   { autoAlpha: 0, y: 40, scale: 0.97, duration: 0.9, delay: 0.3, ease: 'back.out(1.2)' });
+    gsap.from('.sw-actions', { autoAlpha: 0, y: 24,  duration: 0.7,  delay: 0.55 });
+  }, []);
+
+  function onDragStart(e: React.PointerEvent<HTMLDivElement>) {
+    if (busy || cards.length === 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, active: true };
+  }
+
+  function onDragMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current.active) return;
+    const dx = e.clientX - dragRef.current.startX;
+    gsap.set(e.currentTarget, { x: dx, rotation: dx * 0.07, transformOrigin: 'bottom center' });
+  }
+
+  function onDragEnd(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    const dx = e.clientX - dragRef.current.startX;
+    if (Math.abs(dx) > 80) {
+      gsap.set(e.currentTarget, { x: 0, rotation: 0 });
+      handleAction(dx > 0 ? 'si' : 'no');
+    } else {
+      gsap.to(e.currentTarget, { x: 0, rotation: 0, duration: 0.45, ease: 'back.out(1.7)' });
+    }
+  }
+
+  function handleAction(action: 'si' | 'no') {
+    if (busy || cards.length === 0) return;
+    setBusy(true);
+
+    const state = Flip.getState('.sw-card');
+
+    flushSync(() => {
+      setCards(prev => prev.slice(1));
+    });
+
+    Flip.from(state, {
+      targets: '.sw-card',
+      ease: 'sine.inOut',
+      absolute: true,
+      duration: 0.5,
+      onLeave: (elements) =>
+        gsap.to(elements, {
+          duration: 0.3,
+          yPercent: 5,
+          xPercent: action === 'si' ? 5 : -5,
+          transformOrigin: action === 'si' ? 'bottom right' : 'bottom left',
+          opacity: 0,
+          ease: 'expo.out',
+        }),
+      onEnter: (elements) =>
+        gsap.from(elements, {
+          duration: 0.3,
+          yPercent: 20,
+          opacity: 0,
+          ease: 'expo.out',
+        }),
+      onComplete: () => setBusy(false),
+    });
+  }
+
+  const visible  = cards.slice(0, MAX_VIS);
+  const reversed = [...visible].reverse();
+  const front    = cards[0];
+  const totalOff = (visible.length - 1) * CARD_OFF;
+
+  return (
+    <div className="app">
+      <Sidebar />
+
+      <div>
+        <Topbar count={cards.length} />
+
+        <main className="pend">
+
+          <div className="sw-scene">
+
+            {cards.length === 0 ? (
+              <div className="sw-empty">
+                <div className="sw-empty-check">✓</div>
+                <p>Casita sigue buscando en segundo plano.</p>
+              </div>
+            ) : (
+              <>
+                <div className="sw-main">
+                  {/* Card stack */}
+                  <div
+                    className="sw-stack"
+                    style={{ width: CARD_W + totalOff, height: CARD_H }}
+                  >
+                    {reversed.map((card, domIndex) => {
+                      const off    = domIndex * CARD_OFF;
+                      const isFront = card.id === front?.id;
+                      return (
+                        <div
+                          key={card.id}
+                          className={[
+                            'sw-card',
+                            isFront ? 'sw-front' : '',
+                            card.urgent ? 'sw-urgent' : '',
+                          ].join(' ')}
+                          style={{
+                            width:    CARD_W,
+                            height:   CARD_H,
+                            left:     off,
+                            top:      -off,
+                            zIndex:   domIndex + 1,
+                            position: 'absolute',
+                            cursor:   isFront ? 'grab' : undefined,
+                            userSelect: 'none',
+                          }}
+                          {...(isFront ? {
+                            onPointerDown: onDragStart,
+                            onPointerMove: onDragMove,
+                            onPointerUp:   onDragEnd,
+                            onPointerCancel: onDragEnd,
+                          } : {})}
+                        >
+                          {/* Full-portrait image with gradient overlay */}
+                          <div
+                            className={`sw-img${card.imgUrl ? ' sw-img-photo' : ''}`}
+                            style={card.imgUrl ? { backgroundImage: `url("${card.imgUrl}")` } : undefined}
+                          >
+                            <span className="sw-source">{card.source}</span>
+                            <span className={`sw-score${card.scoreWarm ? ' sw-score-warm' : ''}`}>
+                              {card.score}
+                            </span>
+                            {isFront && (
+                              <div className="sw-overlay">
+                                <div className="sw-type">{card.type}</div>
+                                <h3 className="sw-title">{card.title}</h3>
+                                <div className="sw-addr">
+                                  {card.address}
+                                  <span style={{ color: 'var(--fg-3)' }}> · {card.neighborhood}</span>
+                                </div>
+                                <div className="sw-details">{card.details}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="sw-actions">
+                    <button
+                      className="sw-btn sw-no"
+                      onClick={() => handleAction('no')}
+                      disabled={busy}
+                      aria-label="No aprobar"
+                    >
+                      <X size={22} strokeWidth={2} />
+                      <span>No</span>
+                    </button>
+
+                    {front && (
+                      <a
+                        href={front.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="sw-link"
+                      >
+                        <ExternalLink size={13} strokeWidth={SW} />
+                        Ver en {front.source}
+                      </a>
+                    )}
+
+                    <button
+                      className="sw-btn sw-si"
+                      onClick={() => handleAction('si')}
+                      disabled={busy}
+                      aria-label="Aprobar"
+                    >
+                      <Check size={22} strokeWidth={2} />
+                      <span>Sí</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Summary + raw description on the right */}
+                {front && (
+                  <aside className="sw-desc-panel">
+                    {front.summary ? (
+                      <>
+                        <div className="sw-desc-label">
+                          <span className="sw-ai-dot" />
+                          Resumen IA
+                        </div>
+                        <p className="sw-summary">{front.summary}</p>
+                        <div className="sw-desc-label sw-desc-label-secondary">Descripción original</div>
+                        <p className="sw-raw">{front.description}</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="sw-desc-label">Descripción</div>
+                        <p className="sw-raw">{front.description}</p>
+                      </>
+                    )}
+                  </aside>
+                )}
+              </>
+            )}
+
+          </div>
+
+        </main>
+      </div>
+    </div>
+  );
+}
