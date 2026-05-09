@@ -12,6 +12,8 @@ export const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SUPABASE_JWT_SECRET: z.string().min(1),
 
+  ANTHROPIC_API_KEY: z.string().min(1),
+
   CORS_ORIGIN: z.string().min(1),
 });
 

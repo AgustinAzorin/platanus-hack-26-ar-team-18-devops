@@ -6,7 +6,7 @@ import type { Env } from '../../config/env.schema';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts/analysis.prompt';
 import type { AnalysisReport } from './analysis.types';
 
-const MODEL = 'claude-sonnet-4-5';
+const MODEL = 'claude-3-5-sonnet-20241022';
 const MAX_TOKENS = 8192;
 const TIMEOUT_MS = 180_000;
 const MAX_RETRIES = 5;
@@ -31,20 +31,7 @@ export class ClaudeClient {
     const response = await this.client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: [
-        {
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      tools: [
-        {
-          type: 'web_search_20250305',
-          name: 'web_search',
-          max_uses: 5,
-        },
-      ],
+      system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
@@ -59,8 +46,8 @@ export class ClaudeClient {
     );
 
     const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
+      .filter((block: any): block is { type: 'text'; text: string } => block.type === 'text')
+      .map((block: { type: 'text'; text: string }) => block.text)
       .join('\n')
       .trim();
 
