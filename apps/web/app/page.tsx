@@ -7,6 +7,9 @@ export default function HomePage() {
       <p>Monorepo skeleton — Next.js + NestJS + Prisma + Supabase.</p>
       <ul>
         <li>
+          <Link href="/analyze">/analyze</Link> — analizador de propiedades (Claude due-diligence)
+        </li>
+        <li>
           <Link href="/profile">/profile</Link> — authenticated user profile (calls the Nest API)
         </li>
       </ul>

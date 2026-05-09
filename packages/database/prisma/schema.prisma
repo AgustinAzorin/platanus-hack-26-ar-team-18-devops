@@ -20,3 +20,16 @@ model User {
 
   @@map("users")
 }
+
+model Analysis {
+  id          String   @id @default(uuid()) @db.Uuid
+  url         String
+  scrapedData Json     @map("scraped_data")
+  report      Json
+  score       Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([url, createdAt(sort: Desc)], map: "analyses_url_created_at_idx")
+  @@index([createdAt(sort: Desc)], map: "analyses_created_at_idx")
+  @@map("analyses")
+}

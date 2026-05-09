@@ -2,9 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 
+import type { AnalysisReport } from '@repo/types';
+
 import type { Env } from '../../config/env.schema';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts/analysis.prompt';
-import type { AnalysisReport } from './analysis.types';
 
 const MODEL = 'claude-sonnet-4-5';
 const MAX_TOKENS = 8192;
@@ -43,7 +44,7 @@ export class ClaudeClient {
           type: 'web_search_20250305',
           name: 'web_search',
           max_uses: 5,
-        },
+        } satisfies Anthropic.WebSearchTool20250305,
       ],
       messages: [{ role: 'user', content: userPrompt }],
     });

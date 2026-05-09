@@ -1,9 +1,10 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import type { AnalyzePropertyResponse } from '@repo/types';
+
 import { AnalysisService } from './analysis.service';
 import { AnalyzePropertyDto } from './dto/analyze-property.dto';
-import type { AnalyzePropertyResponse } from './analysis.types';
 
 @ApiTags('analysis')
 @Controller('analysis')

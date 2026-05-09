@@ -13,6 +13,8 @@ export const EnvSchema = z.object({
   SUPABASE_JWT_SECRET: z.string().min(1),
 
   CORS_ORIGIN: z.string().min(1),
+
+  ANTHROPIC_API_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
