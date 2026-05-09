@@ -251,9 +251,6 @@ export default function HomePage() {
 
             {/* Hero */}
             <section style={{ textAlign: 'center', padding: '28px 0 24px' }}>
-              <div className="hero-eyebrow eyebrow" style={{ marginBottom: 18 }}>
-                <span className="dot" />NUEVA BÚSQUEDA · OK · 9 MAY 14:32
-              </div>
               <h1
                 className="hero-h1"
                 style={{

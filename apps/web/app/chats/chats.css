@@ -419,10 +419,11 @@ main.chats {
 .ctx {
   border-left: 1px solid var(--line);
   overflow-y: auto;
-  padding: 18px 16px;
+  padding: 14px 14px 24px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
+  min-height: 0;
 }
 .ctx::-webkit-scrollbar { width: 4px; }
 .ctx::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
@@ -432,6 +433,7 @@ main.chats {
   border: 1px solid var(--line);
   border-radius: var(--r-3);
   overflow: hidden;
+  flex: none;
 }
 .ctx-card h4 {
   margin: 0 0 10px;
@@ -445,10 +447,15 @@ main.chats {
 .ctx-prop { position: relative; }
 .ctx-prop .prop-img {
   width: 100%;
-  height: 130px;
+  height: 100px;
   background: linear-gradient(135deg, var(--bg-3) 0%, var(--bg-2) 100%);
   position: relative;
   overflow: hidden;
+}
+.ctx-prop .prop-img.prop-img-photo {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 .ctx-prop .prop-img-ph {
   width: 100%; height: 100%;
@@ -458,17 +465,18 @@ main.chats {
   color: var(--fg-3);
   font-size: 32px;
 }
-.ctx-prop .prop-body { padding: 12px 14px 14px; }
-.ctx-prop .prop-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+.ctx-prop .prop-body { padding: 10px 12px 12px; }
+.ctx-prop .prop-name { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; line-height: 1.25; }
 .ctx-prop .prop-addr {
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--fg-3);
   letter-spacing: 0.04em;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  word-break: break-word;
 }
-.ctx-prop .prop-price { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 10px; }
-.ctx-prop .prop-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.ctx-prop .prop-price { font-size: 19px; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 8px; }
+.ctx-prop .prop-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .ctx-prop .prop-tag {
   font-family: "JetBrains Mono", monospace;
   font-size: 10px;
@@ -479,14 +487,14 @@ main.chats {
   letter-spacing: 0.05em;
 }
 
-.ctx-stats { padding: 14px; }
+.ctx-stats { padding: 12px; }
 .ctx-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0;
+  padding: 6px 0;
   border-top: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--fg-2);
 }
 .ctx-row:first-of-type { border-top: none; padding-top: 0; }
@@ -499,12 +507,12 @@ main.chats {
 .ctx-row .val.warm { color: var(--warm); }
 .ctx-row .val.pos { color: var(--pos); }
 
-.ctx-intents { padding: 14px; }
+.ctx-intents { padding: 12px; }
 .intent-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 8px 0;
+  padding: 7px 0;
   border-top: 1px solid var(--line);
 }
 .intent-item:first-child { border-top: none; padding-top: 0; }
@@ -519,5 +527,5 @@ main.chats {
 .intent-label { font-size: 12.5px; font-weight: 500; margin-bottom: 1px; }
 .intent-sub { font-size: 11.5px; color: var(--fg-3); }
 
-.ctx-actions { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-.ctx-actions .btn { justify-content: center; font-size: 12.5px; }
+.ctx-actions { padding: 12px; display: flex; flex-direction: column; gap: 7px; }
+.ctx-actions .btn { justify-content: center; font-size: 12px; padding: 8px 14px; }

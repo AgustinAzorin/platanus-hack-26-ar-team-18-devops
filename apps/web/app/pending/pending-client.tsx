@@ -114,6 +114,29 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const [cards, setCards] = useState<CardData[]>(initialCards);
   const [busy,  setBusy ] = useState(false);
   const dragRef = useRef({ startX: 0, active: false });
+  const noBtnRef = useRef<HTMLButtonElement>(null);
+  const siBtnRef = useRef<HTMLButtonElement>(null);
+
+  function setBtnIntensity(btn: HTMLButtonElement | null, intensity: number) {
+    if (!btn) return;
+    const t = Math.max(0, Math.min(1, intensity));
+    gsap.to(btn, {
+      scale: 1 + 0.18 * t,
+      duration: t > 0.4 ? 0.18 : 0.34,
+      ease: t > 0.4 ? 'back.out(2)' : 'power2.out',
+      overwrite: 'auto',
+    });
+    if (t > 0.35) btn.classList.add('is-hot');
+    else btn.classList.remove('is-hot');
+  }
+
+  function bounceBtn(btn: HTMLButtonElement | null) {
+    if (!btn) return;
+    gsap.timeline({ overwrite: 'auto' })
+      .to(btn, { scale: 0.88, duration: 0.08, ease: 'power2.in' })
+      .to(btn, { scale: 1.22, duration: 0.18, ease: 'back.out(2.4)' })
+      .to(btn, { scale: 1,    duration: 0.22, ease: 'power2.out' });
+  }
 
   useEffect(() => {
     gsap.defaults({ ease: 'power3.out' });
@@ -133,6 +156,9 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
     if (!dragRef.current.active) return;
     const dx = e.clientX - dragRef.current.startX;
     gsap.set(e.currentTarget, { x: dx, rotation: dx * 0.07, transformOrigin: 'bottom center' });
+    const t = Math.min(1, Math.abs(dx) / 100);
+    setBtnIntensity(siBtnRef.current, dx > 0 ? t : 0);
+    setBtnIntensity(noBtnRef.current, dx < 0 ? t : 0);
   }
 
   function onDragEnd(e: React.PointerEvent<HTMLDivElement>) {
@@ -141,9 +167,13 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
     const dx = e.clientX - dragRef.current.startX;
     if (Math.abs(dx) > 80) {
       gsap.set(e.currentTarget, { x: 0, rotation: 0 });
+      bounceBtn(dx > 0 ? siBtnRef.current : noBtnRef.current);
+      setBtnIntensity(dx > 0 ? noBtnRef.current : siBtnRef.current, 0);
       handleAction(dx > 0 ? 'si' : 'no');
     } else {
       gsap.to(e.currentTarget, { x: 0, rotation: 0, duration: 0.45, ease: 'back.out(1.7)' });
+      setBtnIntensity(siBtnRef.current, 0);
+      setBtnIntensity(noBtnRef.current, 0);
     }
   }
 
@@ -206,75 +236,77 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
             ) : (
               <>
                 <div className="sw-main">
-                  {/* Card stack */}
-                  <div
-                    className="sw-stack"
-                    style={{ width: CARD_W + totalOff, height: CARD_H }}
-                  >
-                    {reversed.map((card, domIndex) => {
-                      const off    = domIndex * CARD_OFF;
-                      const isFront = card.id === front?.id;
-                      return (
+                {/* Card stack */}
+                <div
+                  className="sw-stack"
+                  style={{ width: CARD_W + totalOff, height: CARD_H }}
+                >
+                  {reversed.map((card, domIndex) => {
+                    const off    = domIndex * CARD_OFF;
+                    const isFront = card.id === front?.id;
+                    return (
+                      <div
+                        key={card.id}
+                        className={[
+                          'sw-card',
+                          isFront ? 'sw-front' : '',
+                          card.urgent ? 'sw-urgent' : '',
+                        ].join(' ')}
+                        style={{
+                          width:    CARD_W,
+                          height:   CARD_H,
+                          left:     off,
+                          top:      -off,
+                          zIndex:   domIndex + 1,
+                          position: 'absolute',
+                          cursor:   isFront ? 'grab' : undefined,
+                          userSelect: 'none',
+                        }}
+                        {...(isFront ? {
+                          onPointerDown: onDragStart,
+                          onPointerMove: onDragMove,
+                          onPointerUp:   onDragEnd,
+                          onPointerCancel: onDragEnd,
+                        } : {})}
+                      >
+                        {/* Full-portrait image with gradient overlay */}
                         <div
-                          key={card.id}
-                          className={[
-                            'sw-card',
-                            isFront ? 'sw-front' : '',
-                            card.urgent ? 'sw-urgent' : '',
-                          ].join(' ')}
-                          style={{
-                            width:    CARD_W,
-                            height:   CARD_H,
-                            left:     off,
-                            top:      -off,
-                            zIndex:   domIndex + 1,
-                            position: 'absolute',
-                            cursor:   isFront ? 'grab' : undefined,
-                            userSelect: 'none',
-                          }}
-                          {...(isFront ? {
-                            onPointerDown: onDragStart,
-                            onPointerMove: onDragMove,
-                            onPointerUp:   onDragEnd,
-                            onPointerCancel: onDragEnd,
-                          } : {})}
+                          className={`sw-img${card.imgUrl ? ' sw-img-photo' : ''}`}
+                          style={card.imgUrl ? { backgroundImage: `url("${card.imgUrl}")` } : undefined}
                         >
-                          {/* Full-portrait image with gradient overlay */}
-                          <div
-                            className={`sw-img${card.imgUrl ? ' sw-img-photo' : ''}`}
-                            style={card.imgUrl ? { backgroundImage: `url("${card.imgUrl}")` } : undefined}
-                          >
-                            <span className="sw-source">{card.source}</span>
-                            <span className={`sw-score${card.scoreWarm ? ' sw-score-warm' : ''}`}>
-                              {card.score}
-                            </span>
-                            {isFront && (
-                              <div className="sw-overlay">
-                                <div className="sw-type">{card.type}</div>
-                                <h3 className="sw-title">{card.title}</h3>
-                                <div className="sw-addr">
-                                  {card.address}
-                                  <span style={{ color: 'var(--fg-3)' }}> · {card.neighborhood}</span>
-                                </div>
-                                <div className="sw-details">{card.details}</div>
+                          <span className="sw-source">{card.source}</span>
+                          <span className={`sw-score${card.scoreWarm ? ' sw-score-warm' : ''}`}>
+                            {card.score}
+                          </span>
+                          {isFront && (
+                            <div className="sw-overlay">
+                              <div className="sw-type">{card.type}</div>
+                              <h3 className="sw-title">{card.title}</h3>
+                              <div className="sw-addr">
+                                {card.address}
+                                <span className="sw-addr-sub"> · {card.neighborhood}</span>
                               </div>
-                            )}
-                          </div>
+                              <div className="sw-details">{card.details}</div>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
                   {/* Actions */}
                   <div className="sw-actions">
                     <button
+                      ref={noBtnRef}
                       className="sw-btn sw-no"
-                      onClick={() => handleAction('no')}
+                      onClick={() => { bounceBtn(noBtnRef.current); handleAction('no'); }}
+                      onPointerEnter={() => setBtnIntensity(noBtnRef.current, 1)}
+                      onPointerLeave={() => setBtnIntensity(noBtnRef.current, 0)}
                       disabled={busy}
                       aria-label="No aprobar"
                     >
-                      <X size={22} strokeWidth={2} />
-                      <span>No</span>
+                      <X size={26} strokeWidth={2.2} />
                     </button>
 
                     {front && (
@@ -285,41 +317,32 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
                         className="sw-link"
                       >
                         <ExternalLink size={13} strokeWidth={SW} />
-                        Ver en {front.source}
+                        Ver propiedad
                       </a>
                     )}
 
                     <button
+                      ref={siBtnRef}
                       className="sw-btn sw-si"
-                      onClick={() => handleAction('si')}
+                      onClick={() => { bounceBtn(siBtnRef.current); handleAction('si'); }}
+                      onPointerEnter={() => setBtnIntensity(siBtnRef.current, 1)}
+                      onPointerLeave={() => setBtnIntensity(siBtnRef.current, 0)}
                       disabled={busy}
                       aria-label="Aprobar"
                     >
-                      <Check size={22} strokeWidth={2} />
-                      <span>Sí</span>
+                      <Check size={26} strokeWidth={2.2} />
                     </button>
                   </div>
                 </div>
 
-                {/* Summary + raw description on the right */}
+                {/* Summary on the right */}
                 {front && (
                   <aside className="sw-desc-panel">
-                    {front.summary ? (
-                      <>
-                        <div className="sw-desc-label">
-                          <span className="sw-ai-dot" />
-                          Resumen IA
-                        </div>
-                        <p className="sw-summary">{front.summary}</p>
-                        <div className="sw-desc-label sw-desc-label-secondary">Descripción original</div>
-                        <p className="sw-raw">{front.description}</p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="sw-desc-label">Descripción</div>
-                        <p className="sw-raw">{front.description}</p>
-                      </>
-                    )}
+                    <div className="sw-desc-label">
+                      <span className="sw-ai-dot" />
+                      Resumen IA
+                    </div>
+                    <p className="sw-summary">{front.summary ?? front.description}</p>
                   </aside>
                 )}
               </>

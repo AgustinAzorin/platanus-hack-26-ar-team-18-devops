@@ -447,6 +447,7 @@ main.pend {
 .sw-stack {
   position: relative;
   margin-top: 72px;
+  flex: none;
 }
 
 /* Individual card — full-portrait photo */
@@ -511,11 +512,12 @@ main.pend {
   position: absolute;
   bottom: 0; left: 0; right: 0;
   z-index: 2;
-  padding: 80px 18px 20px;
+  padding: 100px 18px 20px;
   background: linear-gradient(
     to top,
-    oklch(0 0 0 / 0.95) 0%,
-    oklch(0 0 0 / 0.55) 55%,
+    oklch(0 0 0 / 0.92) 0%,
+    oklch(0 0 0 / 0.82) 45%,
+    oklch(0 0 0 / 0.45) 75%,
     transparent 100%
   );
   display: flex;
@@ -560,32 +562,31 @@ main.pend {
 
 .sw-addr {
   font-family: "JetBrains Mono", monospace;
-  font-size: 10px; color: var(--fg-2); letter-spacing: 0.04em;
+  font-size: 10px; color: oklch(0.92 0.005 80); letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.5);
 }
+.sw-addr-sub { color: oklch(0.74 0.008 80); }
 
 .sw-details {
   font-family: "JetBrains Mono", monospace;
-  font-size: 10px; color: var(--fg-3); letter-spacing: 0.04em;
+  font-size: 10px; color: oklch(0.78 0.008 80); letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.5);
+  margin-top: 2px;
 }
 
 /* Description panel — to the right of the card stack */
 .sw-desc-panel {
   flex: 1 1 auto;
   max-width: 460px;
-  max-height: 480px;
+  max-height: 420px;
   text-align: left;
-  padding: 22px 24px;
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
+  padding: 0 4px;
   overflow-y: auto;
-  align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  /* keep it vertically centered visually within the scene */
-  margin-top: 36px;
-  margin-bottom: 36px;
+  gap: 14px;
+  /* lift to align center with card image (compensates the actions row height in .sw-main) */
+  transform: translateY(-46px);
 }
 .sw-desc-panel .sw-desc-label {
   font-family: "JetBrains Mono", monospace;
@@ -643,21 +644,35 @@ main.pend {
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
   cursor: pointer;
-  transition: transform 140ms, background 140ms;
+  /* GSAP drives transform; keep colors smooth */
+  transition: background 220ms ease, border-color 220ms ease, color 220ms ease, box-shadow 260ms ease;
+  will-change: transform;
 }
-.sw-btn:hover  { transform: scale(1.1); }
-.sw-btn:active { transform: scale(0.93); }
 .sw-btn:disabled { opacity: 0.35; pointer-events: none; }
 
 .sw-no {
   border-color: var(--neg); color: var(--neg);
 }
-.sw-no:hover  { background: oklch(0.68 0.20 25 / 0.12); }
+.sw-no.is-hot {
+  background: oklch(0.68 0.20 25 / 0.20);
+  border-color: oklch(0.78 0.20 25);
+  color: oklch(0.92 0.20 25);
+  box-shadow:
+    0 0 28px oklch(0.68 0.20 25 / 0.55),
+    0 0 0 4px oklch(0.68 0.20 25 / 0.18);
+}
 
 .sw-si {
   border-color: var(--pos); color: var(--pos);
 }
-.sw-si:hover  { background: oklch(0.78 0.16 145 / 0.12); }
+.sw-si.is-hot {
+  background: oklch(0.78 0.16 145 / 0.20);
+  border-color: oklch(0.86 0.16 145);
+  color: oklch(0.94 0.16 145);
+  box-shadow:
+    0 0 28px oklch(0.78 0.16 145 / 0.55),
+    0 0 0 4px oklch(0.78 0.16 145 / 0.18);
+}
 
 .sw-link {
   display: inline-flex; align-items: center; gap: 6px;

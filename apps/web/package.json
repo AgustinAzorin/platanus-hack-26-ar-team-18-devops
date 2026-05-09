@@ -12,6 +12,7 @@
     "summarize": "tsx -r dotenv/config scripts/summarize-propiedades.ts"
   },
   "dependencies": {
+    "@kapso/whatsapp-cloud-api": "^0.2.1",
     "@repo/types": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",

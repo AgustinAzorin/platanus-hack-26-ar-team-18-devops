@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/gsap/SKILL.md",
       "computedHash": "ef2658b3705d3fd5c8e38d197b31521553a0bee3b40bda2ab70bf22bd6b88854"
+    },
+    "integrate-whatsapp": {
+      "source": "gokapso/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/integrate-whatsapp/SKILL.md",
+      "computedHash": "1d4eaeecdfaaff92d182706fe23d7e52a6cac775f7042a3a0835d776ff172a2c"
     }
   }
 }
