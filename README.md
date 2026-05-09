@@ -84,6 +84,7 @@ pnpm dev                # boots web (3000) and api (4000) together
 | `DATABASE_URL` | Pooled Supabase URL, port **6543**, with `?pgbouncer=true&connection_limit=1` |
 | `DIRECT_URL` | Direct Supabase URL, port **5432** (used by migrations) |
 | `SUPABASE_URL` | Project URL |
+| `SUPABASE_ANON_KEY` | Anon key (used by the backend's anon client for `signInWithPassword`, `signUp`, `refreshSession`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only key. Never expose to the browser. |
 | `SUPABASE_JWT_SECRET` | Used by `SupabaseAuthGuard` to verify access tokens locally |
 | `PORT` | Default `4000` |
@@ -93,11 +94,32 @@ All env is parsed with Zod at boot (`apps/api/src/config/env.schema.ts`). Missin
 
 ## Auth flow
 
-1. The browser uses `@supabase/ssr` (`apps/web/lib/supabase/{client,server}.ts`) to sign in. Sessions live in cookies.
+Two ways into the system, both backed by Supabase Auth:
+
+### A) Frontend → Supabase directly (cookie sessions, SSR-friendly)
+1. Browser uses `@supabase/ssr` (`apps/web/lib/supabase/{client,server}.ts`) to sign in. Sessions live in cookies.
 2. Server Components read the session with `createClient()` (server flavor) and grab `session.access_token`.
-3. The frontend calls the Nest API with `Authorization: Bearer <jwt>` (see `lib/api-client.ts`).
-4. `SupabaseAuthGuard` (`apps/api/src/common/guards/supabase-auth.guard.ts`) verifies the JWT signature against `SUPABASE_JWT_SECRET` — no network round-trip — and attaches `request.user`.
-5. Controllers consume the user via `@CurrentUser()`.
+3. Frontend calls the Nest API with `Authorization: Bearer <jwt>` (see `lib/api-client.ts`).
+
+### B) Frontend (or mobile / scripts) → Backend `/auth/*` endpoints
+For clients that don't want to talk to Supabase directly, the backend exposes:
+
+| Verb + Path | Auth | Body | Returns |
+| --- | --- | --- | --- |
+| `POST /auth/sign-up` | — | `{ email, password, name? }` | `{ user, session }` |
+| `POST /auth/sign-in` | — | `{ email, password }` | `{ user, session }` |
+| `POST /auth/sign-out` | Bearer | — | 204 |
+| `POST /auth/refresh` | — | `{ refreshToken }` | `session` |
+| `GET  /auth/me` | Bearer | — | `user` |
+
+Implementation lives in `apps/api/src/modules/auth/`. The service uses two Supabase clients (`apps/api/src/supabase/supabase.service.ts`):
+- **anon client** for `signUp` / `signInWithPassword` / `refreshSession` — same RLS-respecting behavior the browser would get.
+- **admin client** (service-role key) for `auth.admin.signOut` and any future admin op.
+
+On `sign-up` the backend mirrors `auth.users.id` into the Prisma `User` table so RLS policies (which key off `auth.uid()`) and our app's joins both work. On `sign-in` it self-heals: if a row is missing in the profile table (legacy user, manual seed), it's backfilled.
+
+### Both flows share the same guard
+`SupabaseAuthGuard` (`apps/api/src/common/guards/supabase-auth.guard.ts`) verifies the JWT signature against `SUPABASE_JWT_SECRET` locally — no Supabase round-trip — and attaches `request.user`. Controllers consume the user via `@CurrentUser()`.
 
 The frontend never imports Prisma. Prisma lives only in `apps/api`.
 
@@ -128,11 +150,15 @@ There's no `route/` folder — in Nest, routing lives on the controller's decora
 ## Deploy
 
 ### Frontend → Vercel (`apps/web`)
-- **Root Directory**: `apps/web`
-- **Build Command**: `cd ../.. && pnpm turbo build --filter=web`
-- **Install Command**: `pnpm install`
-- **Output Directory**: `.next` (auto-detected)
-- Set `NEXT_PUBLIC_*` env vars in the Vercel dashboard.
+
+The repo ships a [`vercel.json`](vercel.json) at the root that drives the build. In the Vercel dashboard:
+
+- **Root Directory**: leave at the repo root (do **not** set it to `apps/web`)
+- **Framework Preset**: Next.js (auto-detected)
+- Build/install commands are read from `vercel.json` — don't override
+- Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL` under Project Settings → Environment Variables for **all** environments (Production, Preview, Development)
+
+`pnpm-lock.yaml` must be committed — Vercel runs `pnpm install --frozen-lockfile` and will fail without it.
 
 ### Backend → Railway / Render / Fly (`apps/api`)
 - Use the root `Dockerfile`. It runs `turbo prune --scope=api --docker` so the image only contains the api workspace and its transitive deps.

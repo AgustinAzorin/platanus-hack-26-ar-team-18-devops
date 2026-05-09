@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@repo/database';
-import type { CreateUserInput, UpdateUserInput } from '@repo/types/users';
+import type { CreateUserInput, UpdateUserInput } from '@repo/types';
 
 import { toApi, type UserModel } from './users.model';
 import { UsersRepository } from './users.repository';

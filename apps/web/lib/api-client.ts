@@ -1,5 +1,6 @@
-import { UpdateUserSchema, UserSchema, type UpdateUserInput, type User } from '@repo/types/users';
-import { z } from 'zod';
+import { UpdateUserSchema, UserSchema } from '@repo/types';
+import type { UpdateUserInput, User } from '@repo/types';
+import type { z } from 'zod';
 
 import { env } from './env';
 
