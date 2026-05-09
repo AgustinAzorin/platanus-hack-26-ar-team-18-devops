@@ -4,6 +4,8 @@ import { ZodValidationPipe } from 'nestjs-zod';
 
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SupabaseModule } from './supabase/supabase.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { ArtistsModule } from './modules/artists/artists.module';
 import { WorksModule } from './modules/works/works.module';
@@ -17,6 +19,8 @@ import { BotLogModule } from './modules/bot-log/bot-log.module';
   imports: [
     ConfigModule,
     PrismaModule,
+    SupabaseModule,
+    AuthModule,
     UsersModule,
     ArtistsModule,
     WorksModule,
