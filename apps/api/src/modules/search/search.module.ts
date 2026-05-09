@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { VoyageClient } from '../../common/clients/voyage.client';
 import { SearchClaudeClient } from './claude.client';
 import { SearchController } from './search.controller';
 import { SearchExecutorService } from './search-executor.service';
@@ -15,6 +16,7 @@ import { SearchTranslatorService } from './search-translator.service';
     SearchExecutorService,
     SearchSummarizerService,
     SearchClaudeClient,
+    VoyageClient,
   ],
   exports: [SearchService],
 })

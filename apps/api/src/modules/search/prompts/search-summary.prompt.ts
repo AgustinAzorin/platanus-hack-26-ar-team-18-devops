@@ -19,7 +19,7 @@ Devolvés EXCLUSIVAMENTE un objeto JSON con un meta-informe comparativo.
 
 - Las recomendaciones deben considerar:
   - Score (más alto mejor).
-  - Match con free_text_query si existe (criterios subjetivos del usuario).
+  - Match con free_text_query si existe (criterios subjetivos del usuario). IMPORTANTE: cuando hay free_text_query, los resultados ya vienen ordenados por similitud semántica (las primeras en la lista son las más relevantes a la descripción visual solicitada), así que el orden de aparición refleja ese ranking.
   - Red flags ausentes o leves.
   - Precio relativo al resto del set.
 - Solo recomendá propiedades que estén en la lista provista. Usá su analysis_id literal.

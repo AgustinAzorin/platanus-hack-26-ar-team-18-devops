@@ -10,6 +10,7 @@ import type {
   PropertyData,
 } from '@repo/types';
 
+import { VoyageClient } from '../../common/clients/voyage.client';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { EnvironmentService } from '../environment/environment.service';
 import { PropertiesService } from '../properties/properties.service';
@@ -26,6 +27,8 @@ interface AnalysisRow {
   report: AnalysisReport;
   score: number;
   created_at: string;
+  visual_description?: string;
+  visual_embedding?: number[];
 }
 
 @Injectable()
@@ -37,6 +40,7 @@ export class AnalysisService {
     private readonly properties: PropertiesService,
     private readonly claude: ClaudeClient,
     private readonly environment: EnvironmentService,
+    private readonly voyage: VoyageClient,
   ) {}
 
   async analyzeByNeighborhood(neighborhood: string): Promise<AnalyzePropertyResponse> {
@@ -94,7 +98,19 @@ export class AnalysisService {
       );
     }
 
-    const persisted = await this.persist(cacheKey, property, report);
+    // Generate visual embedding if visual_description exists
+    let visualEmbedding: number[] | null = null;
+    if (report.visual_description) {
+      try {
+        visualEmbedding = await this.voyage.embed(report.visual_description, 'document');
+      } catch (err) {
+        this.logger.warn(
+          `Failed to generate visual embedding for ${cacheKey}: ${(err as Error).message}. Continuing without embedding.`,
+        );
+      }
+    }
+
+    const persisted = await this.persist(cacheKey, property, report, visualEmbedding);
     return {
       id: persisted.id,
       url: persisted.url,
@@ -130,16 +146,27 @@ export class AnalysisService {
     url: string,
     property: PropertyData,
     report: AnalysisReport,
+    visualEmbedding?: number[] | null,
   ): Promise<AnalysisRow> {
+    const insertData: Record<string, unknown> = {
+      url,
+      scraped_data: property,
+      report,
+      score: report.score,
+    };
+
+    if (report.visual_description) {
+      insertData.visual_description = report.visual_description;
+    }
+
+    if (visualEmbedding) {
+      insertData.visual_embedding = visualEmbedding;
+    }
+
     const { data, error } = await this.supabase.admin
       .from(ANALYSES_TABLE)
-      .insert({
-        url,
-        scraped_data: property,
-        report,
-        score: report.score,
-      })
-      .select('id, url, scraped_data, report, score, created_at')
+      .insert(insertData)
+      .select('id, url, scraped_data, report, score, created_at, visual_description, visual_embedding')
       .single();
 
     if (error || !data) {
