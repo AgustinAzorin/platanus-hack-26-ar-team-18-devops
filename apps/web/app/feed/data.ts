@@ -144,7 +144,9 @@ async function fetchAiFeed(limit: number): Promise<FeedCard[]> {
       status: 'pending',
       statusKind: 'ai-report',
       statusMin: minutesAgo(r.created_at),
-      sourceUrl: p.url ? `https://www.argenprop.com${p.url}` : 'https://www.argenprop.com',
+      sourceUrl: p.url
+        ? p.url.startsWith('http') ? p.url : `https://www.zonaprop.com.ar${p.url}`
+        : 'https://www.zonaprop.com.ar',
       summary,
       pros: Array.isArray(highlights.pros) ? highlights.pros : [],
       cons: Array.isArray(highlights.cons) ? highlights.cons : [],
