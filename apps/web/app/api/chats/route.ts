@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 
 import { kapsoEnv } from '../../../lib/kapso/env';
 import { sendOutbound } from '../../../lib/kapso/messaging';
-import { toE164 } from '../../../lib/kapso/phone';
+import { arAltPhone, toE164 } from '../../../lib/kapso/phone';
 import { createServiceClient } from '../../../lib/supabase/service';
 import { createClient } from '../../../lib/supabase/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
 
 interface CreateChatBody {
   posting_id?: string;
@@ -60,10 +61,18 @@ export async function POST(req: Request) {
   }
 
   // Upsert chat by phone (one chat per destination).
+  // Argentine mobile numbers have two valid formats: +541112345678 (without the '9')
+  // and +5491112345678 (with the '9'). Inbound webhooks use one; outbound may use the other.
+  // Try both so we always reuse the same chat row.
+  const altE164 = arAltPhone(phoneE164);
+  const phonesToTry = altE164 ? [phoneE164, altE164] : [phoneE164];
+
   const { data: existing } = await supabase
     .from('chats')
     .select('id, phone_e164, last_inbound_at')
-    .eq('phone_e164', phoneE164)
+    .in('phone_e164', phonesToTry)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   let chat = existing;
@@ -89,9 +98,11 @@ export async function POST(req: Request) {
       const result = await sendOutbound(chat, body.initial_message);
       return NextResponse.json({ chat, sent: result }, { status: 201 });
     } catch (err) {
+      // Chat and message are saved in DB even when WhatsApp delivery fails.
+      // Return 201 so the UI can navigate to the chat thread.
       return NextResponse.json(
-        { chat, error: err instanceof Error ? err.message : 'Send failed' },
-        { status: 502 },
+        { chat, sent: null, send_warning: err instanceof Error ? err.message : 'Send failed' },
+        { status: 201 },
       );
     }
   }

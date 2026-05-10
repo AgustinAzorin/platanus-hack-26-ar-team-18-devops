@@ -11,6 +11,7 @@ const KapsoEnvSchema = z.object({
   KAPSO_DEFAULT_COUNTRY_ISO: z.string().default('AR'),
   META_GRAPH_VERSION: z.string().default('v24.0'),
   KAPSO_WEBHOOK_SECRET: z.string().default(''),
+  KAPSO_OWNER_PHONE: z.string().default(''),
 });
 
 type KapsoEnv = z.infer<typeof KapsoEnvSchema>;
@@ -29,6 +30,7 @@ export function kapsoEnv(): KapsoEnv {
     KAPSO_DEFAULT_COUNTRY_ISO: process.env.KAPSO_DEFAULT_COUNTRY_ISO,
     META_GRAPH_VERSION: process.env.META_GRAPH_VERSION,
     KAPSO_WEBHOOK_SECRET: process.env.KAPSO_WEBHOOK_SECRET,
+    KAPSO_OWNER_PHONE: process.env.KAPSO_OWNER_PHONE,
   });
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');

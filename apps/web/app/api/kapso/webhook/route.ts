@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { kapsoEnv } from '../../../../lib/kapso/env';
+import { arAltPhone, toE164 } from '../../../../lib/kapso/phone';
 import {
   extractLatestStatusError,
   verifyKapsoSignature,
@@ -66,14 +67,28 @@ async function handleEvent(event: string, payload: unknown) {
   if (event === 'whatsapp.message.received') {
     const env = asMessageEnvelope(payload);
     if (!env) return;
-    const phoneE164 = env.conversation.phone_number;
+    // Normalize to E164: Kapso may send display formats like "+54 9 11 5425-9767"
+    let phoneE164: string;
+    try {
+      phoneE164 = toE164(env.conversation.phone_number);
+    } catch {
+      console.warn(LOG, 'invalid phone_number in payload, skipping', env.conversation.phone_number);
+      return;
+    }
     const text = env.message.text?.body ?? env.message.kapso?.content ?? `[${env.message.type} message]`;
     const contactName = env.conversation.kapso?.contact_name ?? null;
+
+    // Look up by both Argentine formats (+549... and +54...) so inbound and outbound
+    // always land in the same chat regardless of which format Meta uses.
+    const altPhone = arAltPhone(phoneE164);
+    const phonesToMatch = altPhone ? [phoneE164, altPhone] : [phoneE164];
 
     const { data: existing } = await supabase
       .from('chats')
       .select('id')
-      .eq('phone_e164', phoneE164)
+      .in('phone_e164', phonesToMatch)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     let chatId = existing?.id;
@@ -91,6 +106,9 @@ async function handleEvent(event: string, payload: unknown) {
     } else if (contactName) {
       await supabase.from('chats').update({ contact_name: contactName }).eq('id', chatId);
     }
+
+    // Always update last_inbound_at so the 24h window check stays accurate.
+    await supabase.from('chats').update({ last_inbound_at: new Date().toISOString() }).eq('id', chatId);
 
     const { error: msgErr } = await supabase.from('messages').insert({
       chat_id: chatId,

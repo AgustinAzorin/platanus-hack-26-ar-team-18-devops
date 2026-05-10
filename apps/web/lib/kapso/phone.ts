@@ -34,3 +34,19 @@ export function toE164(raw: string, defaultCountryIso = 'AR'): string {
 export function toWaId(e164: string): string {
   return e164.replace(/^\+/, '');
 }
+
+/**
+ * Argentine mobile numbers exist in two WhatsApp formats:
+ *   +5491112345678  (11-digit local, with mobile prefix '9')
+ *   +541112345678   (10-digit local, without the '9')
+ * Returns the alternate form, or null for non-AR numbers.
+ */
+export function arAltPhone(e164: string): string | null {
+  if (e164.startsWith('+549') && e164.length === 14) {
+    return '+54' + e164.slice(4);
+  }
+  if (e164.startsWith('+54') && !e164.startsWith('+549') && e164.length === 13) {
+    return '+549' + e164.slice(3);
+  }
+  return null;
+}

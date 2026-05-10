@@ -2,7 +2,20 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalDependencies": ["**/.env.*local", "**/.env"],
-  "globalEnv": ["NODE_ENV"],
+  "globalEnv": [
+    "NODE_ENV",
+    "ANTHROPIC_API_KEY",
+    "KAPSO_API_KEY",
+    "KAPSO_API_BASE_URL",
+    "KAPSO_PHONE_NUMBER_ID",
+    "KAPSO_WABA_ID",
+    "KAPSO_TEMPLATE_NAME",
+    "KAPSO_TEMPLATE_LANGUAGE",
+    "KAPSO_DEFAULT_COUNTRY_ISO",
+    "META_GRAPH_VERSION",
+    "KAPSO_WEBHOOK_SECRET",
+    "KAPSO_OWNER_PHONE"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build", "^db:generate"],

@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowLeft, ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, ExternalLink, AlertTriangle, CheckCircle, MessageCircle } from 'lucide-react';
 import type { AnalysisReport } from '@repo/types';
 
 import AppSidebar from '../../../components/app-sidebar';
@@ -23,6 +24,7 @@ interface PropertyInfo {
   image_urls: string[];
   description_summary: string | null;
   zonapropUrl: string | null;
+  seller_whatsapp_digits: string | null;
 }
 
 interface InformeClientProps {
@@ -39,6 +41,64 @@ function formatPrice(value: number | null, type: string | null): string {
   if (value >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (value >= 1000) return `${symbol}${Math.round(value / 1000)}k`;
   return `${symbol}${new Intl.NumberFormat('es-AR').format(Math.round(value))}`;
+}
+
+function GenerateBtn({
+  feedRowId,
+  onGenerated,
+  disabled,
+}: {
+  feedRowId: string;
+  onGenerated: (msg: string) => void;
+  disabled: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/informe/${feedRowId}/whatsapp-draft`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? 'Error');
+      } else {
+        onGenerated(json.draft);
+      }
+    } catch {
+      setError('Error de red');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {error && <span style={{ fontSize: 11, color: 'var(--neg)' }}>{error}</span>}
+      <button
+        className="btn btn-ghost"
+        style={{ fontSize: 11, padding: '3px 10px' }}
+        onClick={generate}
+        disabled={disabled || loading}
+      >
+        {loading ? 'Generando…' : '✦ Proponer con IA'}
+      </button>
+    </div>
+  );
+}
+
+function buildWhatsAppDraft(questions: string[]): string {
+  const lines = questions.map((q, i) => `${i + 1}. ${q}`);
+  return ['Hola! Vi tu publicación y tengo algunas consultas:', '', ...lines].join('\n');
+}
+
+function formatSellerPhone(raw: string | null): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('+')) return trimmed;
+  const digits = trimmed.replace(/\D/g, '');
+  return digits ? `+${digits}` : '';
 }
 
 function buildTitle(p: PropertyInfo): string {
@@ -77,6 +137,7 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 export default function InformeClient({
+  feedRowId,
   feedScore,
   analysisReport: analysis,
   analysisCreatedAt,
@@ -86,6 +147,40 @@ export default function InformeClient({
   const title = buildTitle(p);
   const price = formatPrice(p.price_value, p.price_type);
   const exp = p.expenses_value ? `+ ${formatPrice(p.expenses_value, null)} expensas` : null;
+
+  const [ctaOpen, setCtaOpen] = useState(false);
+  const [phone, setPhone] = useState(() => formatSellerPhone(p.seller_whatsapp_digits));
+  const [draft, setDraft] = useState(() => buildWhatsAppDraft(analysis.preguntas_inmobiliaria));
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ chatId: string; warning?: string } | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  async function handleSend() {
+    setSending(true);
+    setSendError(null);
+    try {
+      const res = await fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          posting_id: p.posting_id,
+          ...(phone.trim() ? { phone: phone.trim() } : {}),
+          initial_message: draft,
+          contact_name: 'Oferente',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSendError(json.error ?? 'Error al enviar el mensaje');
+      } else {
+        setResult({ chatId: json.chat.id, warning: json.send_warning });
+      }
+    } catch {
+      setSendError('Error de red. Intentá de nuevo.');
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="app">
@@ -360,6 +455,116 @@ export default function InformeClient({
               </ul>
             </div>
           )}
+
+          <div style={{
+            background: 'oklch(0.78 0.17 150 / 0.07)',
+            border: '1px solid oklch(0.78 0.17 150 / 0.25)',
+            borderRadius: 'var(--r-3)',
+            padding: '20px 24px',
+            marginBottom: 24,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: ctaOpen && !result ? 16 : 0 }}>
+              <MessageCircle size={16} strokeWidth={SW} style={{ color: 'var(--whats)', flexShrink: 0 }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--whats)' }}>
+                Enviar WhatsApp al oferente
+              </span>
+              {!ctaOpen && !result && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ marginLeft: 'auto', fontSize: 12 }}
+                  onClick={() => setCtaOpen(true)}
+                >
+                  Abrir
+                </button>
+              )}
+            </div>
+
+            {result && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                <CheckCircle size={15} strokeWidth={SW} style={{ color: 'var(--pos)', flexShrink: 0 }} />
+                <span style={{ fontSize: 14, color: 'var(--fg-1)' }}>
+                  Mensaje enviado.{' '}
+                  <a href="/chats" style={{ color: 'var(--whats)', textDecoration: 'underline' }}>
+                    Ver conversación →
+                  </a>
+                  {result.warning && (
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--fg-3)', marginTop: 4 }}>
+                      Nota: {result.warning}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {ctaOpen && !result && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', display: 'block', marginBottom: 4 }}>
+                    Número del oferente
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="+54 9 11 1234-5678"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    disabled={sending}
+                    style={{
+                      width: '100%', background: 'var(--bg)',
+                      border: '1px solid var(--line)', borderRadius: 'var(--r-2)',
+                      padding: '10px 14px', fontSize: 13, color: 'var(--fg-1)',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <label style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)' }}>
+                      Mensaje
+                    </label>
+                    <GenerateBtn feedRowId={feedRowId} onGenerated={setDraft} disabled={sending} />
+                  </div>
+                  <textarea
+                    rows={7}
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    disabled={sending}
+                    style={{
+                      width: '100%', background: 'var(--bg)',
+                      border: '1px solid var(--line)', borderRadius: 'var(--r-2)',
+                      padding: '12px 14px', fontSize: 13, color: 'var(--fg-1)',
+                      lineHeight: 1.6, resize: 'vertical', outline: 'none', fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+                {sendError && (
+                  <p style={{ margin: 0, color: 'var(--neg)', fontSize: 13 }}>{sendError}</p>
+                )}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 13 }}
+                    onClick={() => { setCtaOpen(false); setSendError(null); }}
+                    disabled={sending}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="btn"
+                    style={{
+                      background: 'var(--whats)', color: '#fff', fontSize: 13,
+                      opacity: sending ? 0.7 : 1,
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                    }}
+                    onClick={handleSend}
+                    disabled={sending || !draft.trim() || !phone.trim()}
+                  >
+                    <MessageCircle size={14} strokeWidth={SW} />
+                    {sending ? 'Enviando…' : 'Enviar por WhatsApp'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <a href="/feed" className="btn btn-ghost">← Volver al feed</a>

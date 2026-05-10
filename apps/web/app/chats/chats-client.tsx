@@ -1,17 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { gsap } from 'gsap';
 import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import {
-  Search,
+  Search, Sparkles,
   Mail, MessageCircle, MoreVertical, ArrowRight, Calendar, DollarSign, Clock,
+  Brain, CheckCircle, XCircle, MinusCircle,
 } from 'lucide-react';
+import type { AnalysisResult } from '../api/chats/[id]/analyze/route';
 
 import AppSidebar from '../../components/app-sidebar';
+import {
+  EMPTY_FILTERS, EMPTY_PROFILE,
+  type ChatTurn, type ChatResponse, type ClientProfile, type SearchFilters,
+} from '../../lib/search/types';
 import { createClient as createBrowserSupabase } from '../../lib/supabase/client';
 
 import type { ChatMessage, ChatSummary, FeaturedProperty } from './data';
+
+const AI_CHAT_ID = '__casita_ai__';
 
 const SW = 1.6;
 
@@ -61,6 +70,56 @@ function formatTime(iso: string | null): string {
 const WaIcon  = () => <MessageCircle size={8} strokeWidth={2} />;
 const MailIcon = () => <Mail          size={8} strokeWidth={2} />;
 
+interface CalendarEventInfo {
+  url: string;
+  title: string;
+  property: string | null;
+  time: string | null;
+}
+
+function parseCalendarEvent(message: ChatMessage): CalendarEventInfo | null {
+  if (message.kind !== 'system' || !message.body) return null;
+  const url = message.body.match(/https:\/\/calendar\.google\.com\/calendar\/render\?\S+/)?.[0] ?? null;
+  if (!url) return null;
+  const lines = message.body.split('\n').map((line) => line.trim()).filter(Boolean);
+  const readLine = (label: string) => {
+    const prefix = `${label}:`;
+    return lines.find((line) => line.startsWith(prefix))?.slice(prefix.length).trim() ?? null;
+  };
+  return {
+    url,
+    title: lines[0] ?? 'Visita propuesta',
+    property: readLine('Propiedad'),
+    time: readLine('Horario'),
+  };
+}
+
+function CalendarEventMessage({ message }: { message: ChatMessage }) {
+  const event = parseCalendarEvent(message);
+  if (!event) {
+    return (
+      <div className="system">
+        <span>{message.body ?? 'Evento interno'}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="system-event">
+      <div className="system-event-icon">
+        <Calendar size={15} strokeWidth={SW} />
+      </div>
+      <div className="system-event-body">
+        <div className="system-event-title">{event.title}</div>
+        {event.time && <div className="system-event-meta">{event.time}</div>}
+        {event.property && <div className="system-event-sub">{event.property}</div>}
+      </div>
+      <a className="system-event-link" href={event.url} target="_blank" rel="noreferrer">
+        Abrir Calendar
+      </a>
+    </div>
+  );
+}
+
 function Topbar({ activeChat }: { activeChat: ChatSummary | null }) {
   const subject = activeChat
     ? `${activeChat.contact_name ?? activeChat.phone_e164}${activeChat.propiedad_label ? ` · ${activeChat.propiedad_label}` : ''}`
@@ -73,6 +132,10 @@ function Topbar({ activeChat }: { activeChat: ChatSummary | null }) {
         {subject}
       </div>
       <div className="right">
+        <div className="pill">
+          <span className="pulse" />
+          BOT ACTIVO
+        </div>
         <a href="/feed" className="btn btn-ghost">Ver propiedades</a>
         <a href="#" className="btn btn-acc">Conectar WhatsApp <span className="arrow">↗</span></a>
       </div>
@@ -85,41 +148,82 @@ interface ChatsClientProps {
   chats: ChatSummary[];
   initialChatId: string | null;
   initialMessages: ChatMessage[];
+  initialAiQuery?: string;
 }
+
+interface AiTurn extends ChatTurn { id: string }
 
 export default function ChatsClient({
   featured,
   chats: initialChats,
   initialChatId,
   initialMessages,
+  initialAiQuery = '',
 }: ChatsClientProps) {
+  const router = useRouter();
   const [chats, setChats] = useState<ChatSummary[]>(initialChats);
-  const [activeChatId, setActiveChatId] = useState<string | null>(initialChatId);
+  // If we arrived with ?q=..., open the AI chat by default. Otherwise pick the latest WhatsApp chat.
+  const [activeChatId, setActiveChatId] = useState<string | null>(
+    initialAiQuery.length > 0 ? AI_CHAT_ID : initialChatId,
+  );
   const [messagesByChat, setMessagesByChat] = useState<Record<string, ChatMessage[]>>(
     initialChatId ? { [initialChatId]: initialMessages } : {},
   );
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [botReplying, setBotReplying] = useState<string | null>(null); // chatId currently being replied to
+  const botReplyingRef = useRef<Set<string>>(new Set()); // prevent concurrent double-fire
+  const repliedMsgIds = useRef<Set<string>>(new Set()); // prevent re-fire on realtime reconnect
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const msgsRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const animatedRef = useRef(false);
 
   useEffect(() => { setMounted(true); }, []);
 
+  // ── AI chat state ─────────────────────────────────────────
+  const [aiMessages, setAiMessages] = useState<AiTurn[]>([]);
+  const [aiFilters, setAiFilters] = useState<SearchFilters>(EMPTY_FILTERS);
+  const [aiProfile, setAiProfile] = useState<ClientProfile>(EMPTY_PROFILE);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [aiDone, setAiDone] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [executionResult, setExecutionResult] = useState<{ saved: number; total: number } | null>(null);
+  const aiBootedRef = useRef(false);
+  const msgsRef = useRef<HTMLDivElement>(null);
+
+  const isAiActive = activeChatId === AI_CHAT_ID;
+
   const activeChat = useMemo(
-    () => (activeChatId ? chats.find((c) => c.id === activeChatId) ?? null : null),
-    [activeChatId, chats],
+    () => (activeChatId && !isAiActive ? chats.find((c) => c.id === activeChatId) ?? null : null),
+    [activeChatId, chats, isAiActive],
   );
   const activeMessages = useMemo(
-    () => (activeChatId ? messagesByChat[activeChatId] ?? [] : []),
-    [activeChatId, messagesByChat],
+    () => (activeChatId && !isAiActive ? messagesByChat[activeChatId] ?? [] : []),
+    [activeChatId, messagesByChat, isAiActive],
   );
+  const activeCalendarEvent = useMemo(() => {
+    for (const message of [...activeMessages].reverse()) {
+      const event = parseCalendarEvent(message);
+      if (event) return event;
+    }
+    return null;
+  }, [activeMessages]);
 
-  // Load messages on chat change.
+  // Reset analysis when switching chats.
   useEffect(() => {
-    if (!activeChatId || messagesByChat[activeChatId]) return;
+    setAnalysisResult(null);
+    setAnalysisError(null);
+  }, [activeChatId]);
+
+  // Load messages on chat change (skip the virtual AI chat — it has no DB rows).
+  useEffect(() => {
+    if (!activeChatId || activeChatId === AI_CHAT_ID || messagesByChat[activeChatId]) return;
     const supabase = createBrowserSupabase();
     supabase
       .from('messages')
@@ -132,7 +236,21 @@ export default function ChatsClient({
       });
   }, [activeChatId, messagesByChat]);
 
+  async function triggerAiReply(chatId: string) {
+    if (botReplyingRef.current.has(chatId)) return;
+    botReplyingRef.current.add(chatId);
+    setBotReplying(chatId);
+    try {
+      await fetch(`/api/chats/${chatId}/ai-reply`, { method: 'POST' });
+    } finally {
+      botReplyingRef.current.delete(chatId);
+      setBotReplying(null);
+    }
+  }
+
   // Realtime: new messages and chat upserts.
+  // postgres_changes respects RLS, so this may not fire if the anon session lacks
+  // SELECT on these tables. Polling below is the reliable fallback.
   useEffect(() => {
     const supabase = createBrowserSupabase();
     const channel = supabase
@@ -147,6 +265,10 @@ export default function ChatsClient({
             if (list.some((m) => m.id === msg.id)) return prev;
             return { ...prev, [msg.chat_id]: [...list, msg] };
           });
+          if (msg.direction === 'in' && !repliedMsgIds.current.has(msg.id)) {
+            repliedMsgIds.current.add(msg.id);
+            void triggerAiReply(msg.chat_id);
+          }
         },
       )
       .on(
@@ -168,7 +290,6 @@ export default function ChatsClient({
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chats' },
         () => {
-          // Just refetch the list — cheaper than reconciling each event.
           supabase
             .from('chats')
             .select('id, phone_e164, contact_name, propiedad_posting_id, last_message_at, last_inbound_at, unread_count')
@@ -195,8 +316,72 @@ export default function ChatsClient({
     };
   }, []);
 
+  // Polling fallback: refetch active chat messages every 4 seconds and the chats
+  // list every 8 seconds. This guarantees updates even when postgres_changes
+  // realtime events are filtered out by RLS for the anon session.
+  useEffect(() => {
+    if (!activeChatId || activeChatId === AI_CHAT_ID) return;
+    const supabase = createBrowserSupabase();
+
+    const pollMessages = () => {
+      supabase
+        .from('messages')
+        .select('id, chat_id, direction, body, kind, status, created_at')
+        .eq('chat_id', activeChatId)
+        .order('created_at', { ascending: true })
+        .then(({ data }) => {
+          if (!data?.length) return;
+          setMessagesByChat((prev) => {
+            const current = prev[activeChatId];
+            // Skip if nothing changed (same count and same last id).
+            if (current && current.length === data.length && current[current.length - 1]?.id === data[data.length - 1]?.id) return prev;
+            // Trigger bot reply for any new inbound we haven't seen yet.
+            if (current) {
+              const currentIds = new Set(current.map((m) => m.id));
+              for (const msg of data as ChatMessage[]) {
+                if (!currentIds.has(msg.id) && msg.direction === 'in' && !repliedMsgIds.current.has(msg.id)) {
+                  repliedMsgIds.current.add(msg.id);
+                  void triggerAiReply(msg.chat_id);
+                }
+              }
+            }
+            return { ...prev, [activeChatId]: data as ChatMessage[] };
+          });
+        });
+    };
+
+    const pollChats = () => {
+      supabase
+        .from('chats')
+        .select('id, phone_e164, contact_name, propiedad_posting_id, last_message_at, last_inbound_at, unread_count')
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .then(({ data }) => {
+          if (!data) return;
+          setChats((prev) =>
+            (data as ChatSummary[]).map((c) => {
+              const existing = prev.find((p) => p.id === c.id);
+              return {
+                ...c,
+                propiedad_label: existing?.propiedad_label ?? null,
+                last_message_preview: existing?.last_message_preview ?? null,
+              };
+            }),
+          );
+        });
+    };
+
+    const msgTimer = setInterval(pollMessages, 4000);
+    const chatTimer = setInterval(pollChats, 8000);
+    return () => {
+      clearInterval(msgTimer);
+      clearInterval(chatTimer);
+    };
+  }, [activeChatId]);
+
   // useLayoutEffect (isomorphic): runs after DOM commit but BEFORE paint, so
   // the very first frame the user sees already has GSAP's initial transform.
+  // Without this, useEffect fires after paint and the user sees a flash of
+  // the final position before the animation snaps back and replays.
   useIsomorphicLayoutEffect(() => {
     if (!mounted || animatedRef.current) return;
     animatedRef.current = true;
@@ -213,11 +398,103 @@ export default function ChatsClient({
     gsap.from('.ctx',         { x: 32,  duration: 0.7, ease: 'power2.out', delay: 0.24 });
   }
 
-  // Auto-scroll the thread when messages change.
+  // Auto-scroll the thread when messages or typing indicator change.
   useEffect(() => {
     const el = msgsRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [activeMessages.length, activeChatId]);
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [aiMessages.length, aiThinking, executing, aiSuggestions.length, isAiActive, activeMessages.length, botReplying]);
+
+  // Boot the AI conversation on first mount: greet (or echo the ?q=... if any).
+  useEffect(() => {
+    if (aiBootedRef.current) return;
+    aiBootedRef.current = true;
+    if (initialAiQuery.length > 0) {
+      void runAiTurn([{ role: 'user', content: initialAiQuery, id: crypto.randomUUID() }], EMPTY_FILTERS);
+    } else {
+      setAiMessages([{
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: 'Hola! Soy Casita IA. Contame qué tipo de depto buscás (zona, presupuesto, ambientes) y armo el informe para vos.',
+      }]);
+    }
+  }, [initialAiQuery]);
+
+  async function runAiTurn(nextMessages: AiTurn[], currentFilters: SearchFilters) {
+    setAiMessages(nextMessages);
+    setAiThinking(true);
+    setAiSuggestions([]);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/search/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          filters: currentFilters,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as ChatResponse;
+      setAiFilters(data.filters);
+      setAiProfile(data.profile ?? EMPTY_PROFILE);
+      setAiDone(data.done);
+      setAiSuggestions(data.suggestions ?? []);
+      const reply: AiTurn = { id: crypto.randomUUID(), role: 'assistant', content: data.message };
+      setAiMessages([...nextMessages, reply]);
+
+      if (data.done) {
+        await runExecution(data.filters);
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Error en el agente');
+    } finally {
+      setAiThinking(false);
+    }
+  }
+
+  async function runExecution(filters: SearchFilters) {
+    setExecuting(true);
+    try {
+      const res = await fetch('/api/search/execute-and-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { saved: number; total_candidates: number; notice: string | null };
+      setExecutionResult({ saved: data.saved, total: data.total_candidates });
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content:
+            data.saved > 0
+              ? `Listo: armé ${data.saved} informe${data.saved === 1 ? '' : 's'} y los dejé en Encontrados para que aceptes o descartes cuáles voy a contactar.`
+              : data.notice ?? 'No encontré propiedades que matcheen. Probá ampliar criterios.',
+        },
+      ]);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Error al ejecutar la búsqueda');
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  async function handleAiSend(textOverride?: string) {
+    const text = (textOverride ?? draft).trim();
+    if (!text || aiThinking || aiDone) return;
+    setDraft('');
+    const userTurn: AiTurn = { id: crypto.randomUUID(), role: 'user', content: text };
+    await runAiTurn([...aiMessages, userTurn], aiFilters);
+  }
 
   async function handleSend() {
     if (!activeChatId || !draft.trim() || sending) return;
@@ -240,6 +517,26 @@ export default function ChatsClient({
       setSendError(err instanceof Error ? err.message : 'Error al enviar');
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleAnalyze() {
+    if (!activeChatId || isAiActive) return;
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+    try {
+      const res = await fetch(`/api/chats/${activeChatId}/analyze`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        setAnalysisError(json.error ?? 'Error al analizar');
+      } else {
+        setAnalysisResult(json as AnalysisResult);
+      }
+    } catch {
+      setAnalysisError('Error de red');
+    } finally {
+      setAnalyzing(false);
     }
   }
 
@@ -267,6 +564,32 @@ export default function ChatsClient({
               <button className="cl-pill">En oferta</button>
             </div>
             <div className="cl-list">
+              <div
+                className={`convo${isAiActive ? ' active' : ''}`}
+                onClick={() => setActiveChatId(AI_CHAT_ID)}
+              >
+                <div className="av" style={{ background: 'oklch(0.32 0.10 290)', color: 'var(--fg)' }}>
+                  <Sparkles size={16} strokeWidth={SW} />
+                </div>
+                <div className="info">
+                  <div className="row1">
+                    <span className="name">Casita IA</span>
+                    <span className="time">{aiThinking ? 'pensando…' : 'ahora'}</span>
+                  </div>
+                  <div className="preview">
+                    <span className="prop-tag" style={{ background: 'oklch(0.25 0.08 290)', color: 'var(--acc)' }}>BÚSQUEDA</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {aiDone
+                        ? executionResult
+                          ? `${executionResult.saved} informe${executionResult.saved === 1 ? '' : 's'} listo${executionResult.saved === 1 ? '' : 's'}`
+                          : executing ? 'armando informes…' : 'filtros listos'
+                        : aiMessages.length > 0
+                          ? aiMessages[aiMessages.length - 1]!.content.slice(0, 60)
+                          : 'Contame qué buscás'}
+                    </span>
+                  </div>
+                </div>
+              </div>
               {chats.length === 0 ? (
                 <div style={{ padding: 24, color: 'var(--fg-3)', fontSize: 12, lineHeight: 1.5 }}>
                   Sin conversaciones de WhatsApp todavía. Cuando alguien escriba a tu número o
@@ -319,7 +642,21 @@ export default function ChatsClient({
           {/* ── Thread ───────────────────────────────── */}
           <section className="thread">
             <div className="thread-head">
-              {activeChat ? (
+              {isAiActive ? (
+                <>
+                  <div className="th-av" style={{ background: 'oklch(0.32 0.10 290)', color: 'var(--fg)' }}>
+                    <Sparkles size={14} strokeWidth={SW} />
+                  </div>
+                  <div className="th-info">
+                    <div className="th-name">Casita IA</div>
+                    <div className="th-sub">
+                      {aiDone
+                        ? executing ? 'EJECUTANDO BÚSQUEDA…' : 'FILTROS LISTOS · INFORMES EN ENCONTRADOS'
+                        : 'BÚSQUEDA ASISTIDA · CLAUDE HAIKU 4.5'}
+                    </div>
+                  </div>
+                </>
+              ) : activeChat ? (
                 <>
                   <div
                     className="th-av"
@@ -344,9 +681,19 @@ export default function ChatsClient({
                 </div>
               )}
               <div className="th-actions">
-                <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }}>
-                  Ver propiedad
-                </button>
+                {isAiActive && executionResult && executionResult.saved > 0 ? (
+                  <button
+                    className="btn btn-acc"
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                    onClick={() => router.push('/feed')}
+                  >
+                    Ver Encontrados ({executionResult.saved})
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }}>
+                    Ver propiedad
+                  </button>
+                )}
                 <button className="icon-btn">
                   <MoreVertical size={14} strokeWidth={SW} />
                 </button>
@@ -354,21 +701,79 @@ export default function ChatsClient({
             </div>
 
             <div className="msgs" ref={msgsRef}>
-              {activeMessages.map((m) => (
-                <div key={m.id} className={`msg ${m.direction === 'in' ? 'in' : 'out'}`}>
-                  <div className="bubble">
-                    {m.body ?? `[${m.kind}]`}
-                    <span className="ts">
-                      {new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                      {m.direction === 'out' && m.status ? ` · ${m.status}` : ''}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {activeMessages.length === 0 && activeChat && (
-                <div style={{ color: 'var(--fg-3)', fontSize: 12, padding: 16 }}>
-                  Sin mensajes aún. Escribí abajo para mandar el primero.
-                </div>
+              {isAiActive ? (
+                <>
+                  {aiMessages.map((m) => (
+                    <div key={m.id} className={`msg ${m.role === 'user' ? 'out' : 'in'}`}>
+                      <div className="bubble">{m.content}</div>
+                    </div>
+                  ))}
+                  {(aiThinking || executing) && (
+                    <div className="msg in">
+                      {executing ? (
+                        <div className="bubble" style={{ color: 'var(--fg-3)', fontStyle: 'italic' }}>
+                          Armando informes para Pendientes…
+                        </div>
+                      ) : (
+                        <div className="typing-bubble">
+                          <span /><span /><span />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {!aiThinking && !aiDone && aiSuggestions.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 16px 8px' }}>
+                      {aiSuggestions.map((s, i) => (
+                        <button
+                          key={`${i}-${s}`}
+                          type="button"
+                          onClick={() => void handleAiSend(s)}
+                          style={{
+                            padding: '6px 12px', borderRadius: 999, border: '1px solid var(--line)',
+                            background: 'var(--bg-1)', color: 'var(--fg-1)', fontSize: 12, cursor: 'pointer',
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {aiError && (
+                    <div className="msg in">
+                      <div className="bubble" style={{ color: 'var(--neg)' }}>Error: {aiError}</div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {activeMessages.map((m) => (
+                    m.kind === 'system' ? (
+                      <CalendarEventMessage key={m.id} message={m} />
+                    ) : (
+                      <div key={m.id} className={`msg ${m.direction === 'in' ? 'in' : 'out'}`}>
+                        <div className="bubble">
+                          {m.body ?? `[${m.kind}]`}
+                          <span className="ts">
+                            {new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            {m.direction === 'out' && m.status ? ` · ${m.status}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                  {botReplying === activeChatId && (
+                    <div className="msg out">
+                      <div className="typing-bubble">
+                        <span /><span /><span />
+                      </div>
+                    </div>
+                  )}
+                  {activeMessages.length === 0 && activeChat && (
+                    <div style={{ color: 'var(--fg-3)', fontSize: 12, padding: 16 }}>
+                      Sin mensajes aún. Escribí abajo para mandar el primero.
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -376,27 +781,39 @@ export default function ChatsClient({
               <textarea
                 ref={composerRef}
                 rows={1}
-                placeholder={activeChat ? 'Escribir mensaje…' : 'Elegí una conversación primero'}
+                placeholder={
+                  isAiActive
+                    ? aiDone ? 'Listo. Mirá los informes en Pendientes →' : 'Escribir respuesta…'
+                    : activeChat ? 'Escribir mensaje…' : 'Elegí una conversación primero'
+                }
                 value={draft}
-                disabled={!activeChat || sending}
+                disabled={isAiActive ? aiThinking || aiDone || executing : !activeChat || sending}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSend();
+                    if (isAiActive) void handleAiSend();
+                    else handleSend();
                   }
                 }}
               />
               <button
                 className="send-btn"
                 aria-label="Enviar"
-                disabled={!activeChat || !draft.trim() || sending}
-                onClick={handleSend}
+                disabled={
+                  isAiActive
+                    ? aiThinking || aiDone || executing || !draft.trim()
+                    : !activeChat || !draft.trim() || sending
+                }
+                onClick={() => {
+                  if (isAiActive) void handleAiSend();
+                  else handleSend();
+                }}
               >
                 <ArrowRight size={16} strokeWidth={2} />
               </button>
             </div>
-            {sendError && (
+            {sendError && !isAiActive && (
               <div style={{ color: 'var(--neg)', fontSize: 12, padding: '6px 16px' }}>
                 {sendError}
               </div>
@@ -405,103 +822,286 @@ export default function ChatsClient({
 
           {/* ── Context rail ─────────────────────────── */}
           <aside className="ctx">
-            <div className="ctx-card ctx-prop">
-              <div
-                className={`prop-img${featured?.imgUrl ? ' prop-img-photo' : ''}`}
-                style={featured?.imgUrl ? { backgroundImage: `url("${featured.imgUrl}")` } : undefined}
-              >
-                {!featured?.imgUrl && <div className="prop-img-ph">🏠</div>}
-              </div>
-              <div className="prop-body">
-                <div className="prop-name">{featured?.title ?? 'Depto. 3 amb. Palermo'}</div>
-                <div className="prop-addr">{featured?.address ?? 'NICARAGUA 4800, PISO 3 · PALERMO'}</div>
-                <div className="prop-price">{featured?.price ?? '$880.000'}</div>
-                <div className="prop-tags">
-                  {(featured?.specs ?? ['70m²', '2 dorm', '1 baño', 'balcón']).map((s, i) => (
-                    <span key={i} className="prop-tag">{s}</span>
-                  ))}
+            {isAiActive ? (
+              <>
+                <div className="ctx-card ctx-stats">
+                  <h4>Filtros detectados</h4>
+                  {buildAiRail(aiFilters).length === 0 ? (
+                    <div style={{ color: 'var(--fg-3)', fontSize: 12, lineHeight: 1.5, padding: '4px 0' }}>
+                      A medida que respondas, los filtros van a aparecer acá.
+                    </div>
+                  ) : (
+                    buildAiRail(aiFilters).map((it) => (
+                      <div key={it.key} className="ctx-row">
+                        <span>{it.label}</span>
+                        <span className="val">{it.value}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
-              </div>
-            </div>
 
-            <div className="ctx-card ctx-stats">
-              <h4>Estado del chat</h4>
-              <div className="ctx-row">
-                <span>Teléfono</span>
-                <span className="val">{activeChat?.phone_e164 ?? '—'}</span>
-              </div>
-              <div className="ctx-row">
-                <span>Última entrante</span>
-                <span className="val">{formatTime(activeChat?.last_inbound_at ?? null) || '—'}</span>
-              </div>
-              <div className="ctx-row">
-                <span>Mensajes</span>
-                <span className="val">{activeMessages.length}</span>
-              </div>
-              <div className="ctx-row">
-                <span>Sin leer</span>
-                <span className="val">{activeChat?.unread_count ?? 0}</span>
-              </div>
-            </div>
+                <div className="ctx-card ctx-stats">
+                  <h4>Tu perfil</h4>
+                  {buildAiProfileRail(aiProfile).length === 0 ? (
+                    <div style={{ color: 'var(--fg-3)', fontSize: 12, lineHeight: 1.5, padding: '4px 0' }}>
+                      Datos que se guardan una vez (mascota, propiedad, garante, caución).
+                    </div>
+                  ) : (
+                    buildAiProfileRail(aiProfile).map((it) => (
+                      <div key={it.key} className="ctx-row">
+                        <span>{it.label}</span>
+                        <span className="val">{it.value}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
 
-            <div className="ctx-card ctx-intents">
-              <h4>Intenciones detectadas</h4>
-              <div className="intent-item">
-                <div
-                  className="intent-icon"
-                  style={{ background: 'oklch(0.25 0.08 116)', color: 'var(--acc)' }}
-                >
-                  <Calendar size={13} strokeWidth={SW} />
+                <div className="ctx-card ctx-actions">
+                  <h4>Búsqueda</h4>
+                  {executionResult && executionResult.saved > 0 ? (
+                    <button className="btn btn-acc" style={{ justifyContent: 'center' }} onClick={() => router.push('/feed')}>
+                      Ver {executionResult.saved} informe{executionResult.saved === 1 ? '' : 's'} en Encontrados
+                    </button>
+                  ) : (
+                    <button className="btn btn-ghost" style={{ justifyContent: 'center', fontSize: 12.5 }} disabled>
+                      {aiDone ? (executing ? 'Armando informes…' : 'Sin resultados') : 'Seguí respondiendo…'}
+                    </button>
+                  )}
+                  <div style={{ color: 'var(--fg-3)', fontSize: 11.5, lineHeight: 1.5, marginTop: 4 }}>
+                    Cuando termines de charlar, Casita filtra las propiedades, arma un informe
+                    de cada una y las deja en Encontrados para que aceptes o descartes. La IA
+                    contacta a los dueños de las que aceptes y, cuando cierra una visita, te
+                    avisa en Pendientes.
+                  </div>
                 </div>
-                <div className="intent-body">
-                  <div className="intent-label">Sin intenciones</div>
-                  <div className="intent-sub">Se completa con IA</div>
+              </>
+            ) : (
+              <>
+                <div className="ctx-card ctx-prop">
+                  <div
+                    className={`prop-img${featured?.imgUrl ? ' prop-img-photo' : ''}`}
+                    style={featured?.imgUrl ? { backgroundImage: `url("${featured.imgUrl}")` } : undefined}
+                  >
+                    {!featured?.imgUrl && <div className="prop-img-ph">🏠</div>}
+                  </div>
+                  <div className="prop-body">
+                    <div className="prop-name">{featured?.title ?? 'Depto. 3 amb. Palermo'}</div>
+                    <div className="prop-addr">{featured?.address ?? 'NICARAGUA 4800, PISO 3 · PALERMO'}</div>
+                    <div className="prop-price">{featured?.price ?? '$880.000'}</div>
+                    <div className="prop-tags">
+                      {(featured?.specs ?? ['70m²', '2 dorm', '1 baño', 'balcón']).map((s, i) => (
+                        <span key={i} className="prop-tag">{s}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="intent-item">
-                <div
-                  className="intent-icon"
-                  style={{ background: 'oklch(0.25 0.08 45)', color: 'var(--warm)' }}
-                >
-                  <DollarSign size={13} strokeWidth={SW} />
-                </div>
-                <div className="intent-body">
-                  <div className="intent-label">—</div>
-                  <div className="intent-sub">—</div>
-                </div>
-              </div>
-              <div className="intent-item">
-                <div
-                  className="intent-icon"
-                  style={{ background: 'oklch(0.22 0.06 220)', color: 'var(--fg-2)' }}
-                >
-                  <Clock size={13} strokeWidth={SW} />
-                </div>
-                <div className="intent-body">
-                  <div className="intent-label">—</div>
-                  <div className="intent-sub">—</div>
-                </div>
-              </div>
-            </div>
 
-            <div className="ctx-card ctx-actions">
-              <h4>Acciones rápidas</h4>
-              <button className="btn btn-acc" style={{ justifyContent: 'center' }}>
-                Confirmar visita
-              </button>
-              <button className="btn btn-ghost" style={{ justifyContent: 'center', fontSize: 12.5 }}>
-                Enviar contrapropuesta
-              </button>
-              <button className="btn btn-ghost" style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--neg)' }}>
-                Descartar propiedad
-              </button>
-            </div>
+                <div className="ctx-card ctx-stats">
+                  <h4>Estado del chat</h4>
+                  <div className="ctx-row">
+                    <span>Teléfono</span>
+                    <span className="val">{activeChat?.phone_e164 ?? '—'}</span>
+                  </div>
+                  <div className="ctx-row">
+                    <span>Última entrante</span>
+                    <span className="val">{formatTime(activeChat?.last_inbound_at ?? null) || '—'}</span>
+                  </div>
+                  <div className="ctx-row">
+                    <span>Mensajes</span>
+                    <span className="val">{activeMessages.length}</span>
+                  </div>
+                  <div className="ctx-row">
+                    <span>Sin leer</span>
+                    <span className="val">{activeChat?.unread_count ?? 0}</span>
+                  </div>
+                </div>
+
+                {activeCalendarEvent && (
+                  <div className="ctx-card ctx-calendar">
+                    <h4>Visita propuesta</h4>
+                    {activeCalendarEvent.time && (
+                      <div className="ctx-calendar-time">{activeCalendarEvent.time}</div>
+                    )}
+                    {activeCalendarEvent.property && (
+                      <div className="ctx-calendar-prop">{activeCalendarEvent.property}</div>
+                    )}
+                    <a className="btn btn-acc" href={activeCalendarEvent.url} target="_blank" rel="noreferrer">
+                      <Calendar size={13} strokeWidth={SW} />
+                      Abrir Google Calendar
+                    </a>
+                  </div>
+                )}
+
+                <div className="ctx-card ctx-intents">
+                  <h4>Intenciones detectadas</h4>
+                  <div className="intent-item">
+                    <div
+                      className="intent-icon"
+                      style={{ background: 'oklch(0.25 0.08 116)', color: 'var(--acc)' }}
+                    >
+                      <Calendar size={13} strokeWidth={SW} />
+                    </div>
+                    <div className="intent-body">
+                      <div className="intent-label">Sin intenciones</div>
+                      <div className="intent-sub">Se completa con IA</div>
+                    </div>
+                  </div>
+                  <div className="intent-item">
+                    <div
+                      className="intent-icon"
+                      style={{ background: 'oklch(0.25 0.08 45)', color: 'var(--warm)' }}
+                    >
+                      <DollarSign size={13} strokeWidth={SW} />
+                    </div>
+                    <div className="intent-body">
+                      <div className="intent-label">—</div>
+                      <div className="intent-sub">—</div>
+                    </div>
+                  </div>
+                  <div className="intent-item">
+                    <div
+                      className="intent-icon"
+                      style={{ background: 'oklch(0.22 0.06 220)', color: 'var(--fg-2)' }}
+                    >
+                      <Clock size={13} strokeWidth={SW} />
+                    </div>
+                    <div className="intent-body">
+                      <div className="intent-label">—</div>
+                      <div className="intent-sub">—</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ctx-card ctx-actions">
+                  <h4>Análisis IA</h4>
+                  {!analysisResult && (
+                    <button
+                      className="btn btn-acc"
+                      style={{ justifyContent: 'center', gap: 6 }}
+                      onClick={handleAnalyze}
+                      disabled={analyzing || !activeChat}
+                    >
+                      <Brain size={13} strokeWidth={SW} />
+                      {analyzing ? 'Analizando…' : 'Interpretar respuestas'}
+                    </button>
+                  )}
+                  {analysisError && (
+                    <p style={{ fontSize: 12, color: 'var(--neg)', margin: 0 }}>{analysisError}</p>
+                  )}
+                  {analysisResult && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {/* Verdict badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {analysisResult.verdict === 'positivo' && <CheckCircle size={14} strokeWidth={SW} style={{ color: 'var(--pos)', flexShrink: 0 }} />}
+                        {analysisResult.verdict === 'neutro'   && <MinusCircle size={14} strokeWidth={SW} style={{ color: 'var(--warn)', flexShrink: 0 }} />}
+                        {analysisResult.verdict === 'negativo' && <XCircle     size={14} strokeWidth={SW} style={{ color: 'var(--neg)', flexShrink: 0 }} />}
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+                          color: analysisResult.verdict === 'positivo' ? 'var(--pos)' : analysisResult.verdict === 'negativo' ? 'var(--neg)' : 'var(--warn)',
+                        }}>
+                          {analysisResult.verdict}
+                        </span>
+                      </div>
+                      {/* Summary */}
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--fg-1)', lineHeight: 1.5 }}>
+                        {analysisResult.summary}
+                      </p>
+                      {/* Answered */}
+                      {analysisResult.answered.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 4 }}>Respondió</div>
+                          {analysisResult.answered.map((a: { question: string; answer: string }, i: number) => (
+                            <div key={i} style={{ fontSize: 11.5, color: 'var(--fg-1)', marginBottom: 4, lineHeight: 1.4 }}>
+                              <span style={{ color: 'var(--pos)', fontWeight: 600 }}>✓ </span>
+                              <b>{a.question}</b>: {a.answer}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Unanswered */}
+                      {analysisResult.unanswered.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 4 }}>Sin respuesta</div>
+                          {analysisResult.unanswered.map((q: string, i: number) => (
+                            <div key={i} style={{ fontSize: 11.5, color: 'var(--neg)', marginBottom: 2, lineHeight: 1.4 }}>
+                              ✗ {q}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Next step */}
+                      <div style={{
+                        background: 'var(--bg)', border: '1px solid var(--line)',
+                        borderRadius: 'var(--r-2)', padding: '8px 10px',
+                        fontSize: 12, color: 'var(--fg-1)', lineHeight: 1.4,
+                      }}>
+                        <span style={{ color: 'var(--acc)', fontWeight: 600 }}>→ </span>
+                        {analysisResult.next_step}
+                      </div>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ justifyContent: 'center', fontSize: 11.5, gap: 6 }}
+                        onClick={handleAnalyze}
+                        disabled={analyzing}
+                      >
+                        <Brain size={11} strokeWidth={SW} />
+                        {analyzing ? 'Analizando…' : 'Reanalizar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </aside>
 
         </main>
       </div>
     </div>
   );
+}
+
+interface AiRailItem { key: string; label: string; value: string }
+
+function buildAiRail(f: SearchFilters): AiRailItem[] {
+  const out: AiRailItem[] = [];
+  if (f.neighborhoods.length > 0) {
+    out.push({ key: 'zonas', label: 'Zona', value: f.neighborhoods.join(', ') });
+  }
+  if (f.price_max !== null) {
+    const sym = f.price_currency === 'USD' ? 'USD' : '$';
+    out.push({ key: 'precio', label: 'Hasta', value: `${sym} ${new Intl.NumberFormat('es-AR').format(f.price_max)}` });
+  }
+  if (f.min_rooms !== null || f.max_rooms !== null) {
+    let v: string;
+    if (f.min_rooms !== null && f.max_rooms !== null && f.min_rooms === f.max_rooms) v = `${f.min_rooms} amb`;
+    else if (f.min_rooms !== null && f.max_rooms !== null) v = `${f.min_rooms}–${f.max_rooms} amb`;
+    else if (f.min_rooms !== null) v = `desde ${f.min_rooms} amb`;
+    else v = `hasta ${f.max_rooms} amb`;
+    out.push({ key: 'amb', label: 'Ambientes', value: v });
+  }
+  if (f.move_in_date) {
+    out.push({
+      key: 'fecha',
+      label: 'Mudanza',
+      value: new Date(f.move_in_date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }),
+    });
+  }
+  for (const feat of f.must_have_features) {
+    out.push({ key: `feat:${feat}`, label: 'Feature', value: feat.replace(/_/g, ' ') });
+  }
+  return out;
+}
+
+function buildAiProfileRail(p: ClientProfile): AiRailItem[] {
+  const out: AiRailItem[] = [];
+  if (p.has_pet !== null) out.push({ key: 'pet', label: 'Mascota', value: p.has_pet ? (p.pet_details ?? 'Sí') : 'No' });
+  if (p.has_real_estate !== null) out.push({ key: 're', label: 'Propiedad', value: p.has_real_estate ? (p.real_estate_location ?? 'Sí') : 'No tiene' });
+  if (p.has_guarantor !== null) out.push({ key: 'gar', label: 'Garante', value: p.has_guarantor ? (p.guarantor_details ?? 'Sí') : 'No tiene' });
+  if (p.caucion_status !== null) {
+    const v = p.caucion_status === 'has' ? 'Tiene' : p.caucion_status === 'can_contract' ? 'Puede contratar' : 'No tiene';
+    out.push({ key: 'cau', label: 'Caución', value: v });
+  }
+  return out;
 }
 
 // Suppress mail icon unused warning (kept for parity with old layout if re-enabled).
