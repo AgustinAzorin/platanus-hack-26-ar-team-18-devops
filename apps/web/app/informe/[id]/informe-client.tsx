@@ -96,6 +96,8 @@ export default function InformeClient({
   const [isAnalyzing, setIsAnalyzing] = useState(!analysisReport);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [hasTriggered, setHasTriggered] = useState(false);
+  const [analyzeStartedAt, setAnalyzeStartedAt] = useState<number | null>(null);
+  const [showSlowWarning, setShowSlowWarning] = useState(false);
 
   // Si no existe análisis, disparar uno en background
   useEffect(() => {
@@ -104,11 +106,17 @@ export default function InformeClient({
 
     const triggerAnalysis = async () => {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutos timeout
+
         const res = await fetch(`${apiUrl}/analysis/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ neighborhood: p.neighborhood }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({ message: 'Error desconocido' }));
@@ -118,24 +126,46 @@ export default function InformeClient({
         }
 
         // Extraer el report del response
-        const data = (await res.json()) as { report?: AnalysisReport; created_at?: string };
-        if (data.report) {
-          setAnalysis(data.report);
-          setAnalysisCreatedAt(data.created_at ?? new Date().toISOString());
+        const data = (await res.json()) as unknown;
+        const report = (data as { report?: unknown }).report;
+        const createdAt = (data as { created_at?: string }).created_at;
+
+        if (report && typeof report === 'object' && 'score' in report) {
+          setAnalysis(report as AnalysisReport);
+          setAnalysisCreatedAt(createdAt ?? new Date().toISOString());
           setIsAnalyzing(false);
         } else {
-          setAnalysisError('La respuesta del servidor no incluye el informe');
+          setAnalysisError('No se pudo procesar el informe recibido');
           setIsAnalyzing(false);
         }
       } catch (err) {
-        setAnalysisError((err as Error).message || 'Error de conexión');
+        if ((err as Error).name === 'AbortError') {
+          setAnalysisError('El análisis tardó demasiado tiempo. Probá recargar la página en unos minutos.');
+        } else {
+          setAnalysisError((err as Error).message || 'Error de conexión');
+        }
         setIsAnalyzing(false);
       }
     };
 
+    setAnalyzeStartedAt(Date.now());
     const timer = setTimeout(triggerAnalysis, 500);
     return () => clearTimeout(timer);
   }, [analysisReport, p.neighborhood, hasTriggered, apiUrl]);
+
+  // Mostrar warning si está tardando mucho
+  useEffect(() => {
+    if (!isAnalyzing || !analyzeStartedAt) return;
+
+    const checkTimer = setInterval(() => {
+      const elapsed = Date.now() - analyzeStartedAt;
+      if (elapsed > 60000) { // Más de 1 minuto
+        setShowSlowWarning(true);
+      }
+    }, 5000);
+
+    return () => clearInterval(checkTimer);
+  }, [isAnalyzing, analyzeStartedAt]);
 
   if (!analysis) {
     return (
@@ -174,6 +204,15 @@ export default function InformeClient({
                   <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
                     Claude está analizando esta propiedad con web search. Esto puede tardar 30-90 segundos.
                   </p>
+                  {showSlowWarning && (
+                    <div style={{
+                      marginTop: 16, padding: '12px 16px', background: 'oklch(0.72 0.155 45 / 0.12)',
+                      border: '1px solid oklch(0.72 0.155 45 / 0.3)', borderRadius: 'var(--r-1)',
+                      fontSize: 13, color: 'var(--warm)',
+                    }}>
+                      ⏳ Está tardando más de lo esperado. Si sigue así mucho más tiempo, recargá la página.
+                    </div>
+                  )}
                   <p style={{ fontSize: 13, color: 'var(--fg-3)' }}>Podés volver y recargar la página en unos momentos.</p>
                 </>
               ) : analysisError ? (
