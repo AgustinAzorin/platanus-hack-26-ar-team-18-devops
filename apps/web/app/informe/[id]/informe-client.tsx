@@ -31,6 +31,7 @@ interface InformeClientProps {
   feedScore: number;
   analysisReport: AnalysisReport | null;
   analysisCreatedAt: string | null;
+  apiUrl: string;
   property: PropertyInfo;
 }
 
@@ -81,6 +82,7 @@ export default function InformeClient({
   feedScore,
   analysisReport: analysis,
   analysisCreatedAt,
+  apiUrl,
   property: p,
 }: InformeClientProps) {
   const cover = p.image_urls[0] ?? null;
@@ -97,8 +99,9 @@ export default function InformeClient({
 
     const triggerAnalysis = async () => {
       try {
-        const res = await fetch('/api/analysis/analyze', {
+        const res = await fetch(`${apiUrl}/analysis/analyze`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ neighborhood: p.neighborhood }),
         });
 

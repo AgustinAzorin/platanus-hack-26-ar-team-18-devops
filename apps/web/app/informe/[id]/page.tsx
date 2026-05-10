@@ -101,6 +101,7 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
       feedScore={row.match_score ?? 0}
       analysisReport={analysis}
       analysisCreatedAt={analysisCreatedAt}
+      apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}
       property={{
         posting_id: prop.posting_id,
         address: prop.address,
