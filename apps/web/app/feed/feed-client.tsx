@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import { gsap } from 'gsap';
 import { Heart, FileText } from 'lucide-react';
 
@@ -63,6 +64,8 @@ interface FeedClientProps {
 export default function FeedClient({ cards: initialCards, summary }: FeedClientProps) {
   const [cards] = useState<FeedCard[]>(initialCards);
   const [threshold, setThreshold] = useState(70);
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('feedScoreThreshold');
@@ -80,27 +83,21 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
   const otherCards = cards.filter((c) => c.approveAction !== 'feed-decide');
   const orderedCards = [...otherCards, ...aboveCards, ...belowCards];
 
-  useEffect(() => {
-    gsap.defaults({ ease: 'power3.out' });
+  useEffect(() => { setMounted(true); }, []);
 
-    gsap.from('.side',   { x: -24, autoAlpha: 0, duration: 1.0 });
-    gsap.from('.topbar', { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.15 });
-    gsap.from('.feed-head', { autoAlpha: 0, y: 32, duration: 1.0, delay: 0.28 });
-    gsap.from('.filters',   { autoAlpha: 0, y: 16, duration: 0.7, delay: 0.5 });
-    gsap.from('.meta-row',  { autoAlpha: 0, y: 10, duration: 0.6, delay: 0.68 });
-
-    gsap.from('.pcard', {
-      autoAlpha: 0, y: 40, scale: 0.97,
-      duration: 0.8, ease: 'power2.out',
-      stagger: { amount: 0.85, from: 'start' },
-      delay: 0.8,
-    });
-
-    gsap.from('.rcard', {
-      autoAlpha: 0, x: 30,
-      duration: 0.75, ease: 'power2.out',
-      stagger: 0.14, delay: 1.1,
-    });
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted) return;
+    if (!animatedRef.current) {
+      animatedRef.current = true;
+      gsap.defaults({ ease: 'power3.out' });
+      gsap.from('.side',      { x: -28, duration: 0.7 });
+      gsap.from('.topbar',    { y: -16, duration: 0.6, delay: 0.08 });
+      gsap.from('.feed-head', { y: 26,  duration: 0.7,  delay: 0.16 });
+      gsap.from('.filters',   { y: 18,  duration: 0.55, delay: 0.26 });
+      gsap.from('.meta-row',  { y: 14,  duration: 0.5,  delay: 0.34 });
+      gsap.from('.pcard',     { y: 32, scale: 0.96, duration: 0.6, ease: 'power2.out', stagger: { amount: 0.6, from: 'start' }, delay: 0.42 });
+      gsap.from('.rcard',     { x: 28, duration: 0.6, ease: 'power2.out', stagger: 0.08, delay: 0.5 });
+    }
 
     const cleanups: Array<() => void> = [];
     document.querySelectorAll<HTMLElement>('.pcard').forEach((card) => {
@@ -114,7 +111,9 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
       });
     });
     return () => cleanups.forEach((fn) => fn());
-  }, [cards.length]);
+  }, [mounted, cards.length]);
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">

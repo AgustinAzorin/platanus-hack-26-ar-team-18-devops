@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { Check, X, ExternalLink } from 'lucide-react';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 
 import AppSidebar from '../../components/app-sidebar';
 
@@ -98,24 +99,28 @@ export default function ApprovePage() {
   const [answered, setAnswered] = useState<{ id: number; yes: boolean }[]>([]);
   const [busy, setBusy] = useState(false);
   const firstRender = useRef(true);
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
 
-  useEffect(() => {
+  useEffect(() => { setMounted(true); }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted || animatedRef.current) return;
+    animatedRef.current = true;
     initEntrance();
-  }, []);
+  }, [mounted]);
 
   function initEntrance() {
     gsap.defaults({ ease: 'power3.out' });
-    gsap.from('.side',    { x: -24, autoAlpha: 0, duration: 1.0 });
-    gsap.from('.topbar',  { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.12 });
-    gsap.from('.approve-dots', { autoAlpha: 0, y: 12, duration: 0.6, delay: 0.28 });
-    gsap.from('.deck-wrap', {
-      autoAlpha: 0, y: 50, scale: 0.93,
-      duration: 1.1, ease: 'back.out(1.5)', delay: 0.45,
-    });
-    gsap.from('.approve-actions', { autoAlpha: 0, y: 18, duration: 0.65, delay: 0.85 });
-    gsap.from('.kbd-hint', { autoAlpha: 0, duration: 0.45, delay: 1.05 });
+    // Transform-only entrance (never goes through opacity:0).
+    gsap.from('.side',         { x: -28, duration: 0.7 });
+    gsap.from('.topbar',       { y: -16, duration: 0.6, delay: 0.08 });
+    gsap.from('.approve-dots', { y: 16,  duration: 0.55, delay: 0.18 });
+    gsap.from('.deck-wrap',    { y: 44, scale: 0.94, duration: 0.85, ease: 'back.out(1.4)', delay: 0.26 });
+    gsap.from('.approve-actions', { y: 22, duration: 0.6, delay: 0.55 });
+    gsap.from('.kbd-hint',     { y: 12,  duration: 0.5, delay: 0.7 });
 
-    // Subtle hint tilt: card breathes slightly
+    // Subtle hint tilt: card breathes slightly.
     gsap.to('.req-card', {
       rotation: 1.5, duration: 2.4,
       ease: 'sine.inOut', repeat: 1, yoyo: true, delay: 1.6,
@@ -167,6 +172,8 @@ export default function ApprovePage() {
   const remaining = deck.length;
   const current   = deck[0];
   const gradIdx   = (INITIAL.length - remaining) % photoGradients.length;
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">

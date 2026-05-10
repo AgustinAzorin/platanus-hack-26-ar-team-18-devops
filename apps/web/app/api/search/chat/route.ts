@@ -16,8 +16,9 @@ export async function POST(req: Request) {
   }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
-  if (messages.length === 0) {
-    return NextResponse.json({ error: 'messages must be non-empty' }, { status: 400 });
+  const selectedPills = Array.isArray(body.selected_pills) ? body.selected_pills : [];
+  if (messages.length === 0 && selectedPills.length === 0) {
+    return NextResponse.json({ error: 'messages or selected_pills required' }, { status: 400 });
   }
   const filters = { ...EMPTY_FILTERS, ...(body.filters ?? {}) };
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     const userId = await getCurrentClientUserId();
     const profileBefore = await loadClientProfile(userId);
 
-    const agent = await runChatTurn({ messages, filters, profile: profileBefore });
+    const agent = await runChatTurn({ messages, filters, profile: profileBefore, selectedPills });
 
     if (Object.keys(agent.profile_updates).length > 0) {
       await persistProfileUpdates(userId, agent.profile_updates);

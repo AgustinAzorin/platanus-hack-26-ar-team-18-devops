@@ -106,6 +106,30 @@ main.search {
   color: oklch(0.85 0.10 280);
 }
 
+/* Pill selections — quick-reply chips the user clicked, surfaced in the rail
+   instead of the thread so the conversation log stays as the user wrote it. */
+.rail-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  font-size: 13px;
+  color: var(--fg);
+  width: fit-content;
+  animation: rail-chip-in 220ms ease-out both;
+}
+
+.rail-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--acc);
+  flex: none;
+}
+
 .rail-chip-text {
   display: flex;
   flex-direction: column;
@@ -190,6 +214,34 @@ main.search {
 
 .quick-reply:active {
   transform: scale(0.97);
+}
+
+/* Frozen = a previous turn's pills, kept visible but disabled (greyed out). */
+.quick-reply-frozen {
+  cursor: default;
+  color: var(--fg-3);
+  background: transparent;
+  border-color: var(--line);
+  opacity: 0.6;
+}
+.quick-reply-frozen:hover {
+  /* override the default :hover */
+  background: transparent;
+  border-color: var(--line);
+  color: var(--fg-3);
+}
+
+/* Picked = the chip the user actually clicked. Stays accented even when frozen. */
+.quick-reply-picked {
+  color: var(--acc);
+  background: oklch(0.25 0.07 116 / 0.45);
+  border-color: oklch(0.55 0.17 116 / 0.55);
+  opacity: 1;
+}
+.quick-reply-picked:hover {
+  background: oklch(0.25 0.07 116 / 0.45);
+  border-color: oklch(0.55 0.17 116 / 0.55);
+  color: var(--acc);
 }
 
 /* Loader bubble (3 dots) for the assistant while it thinks */
