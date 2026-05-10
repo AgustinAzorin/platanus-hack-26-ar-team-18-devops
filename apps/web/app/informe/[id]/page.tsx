@@ -76,7 +76,7 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
       : `https://www.zonaprop.com.ar${prop.url}`
     : null;
 
-  // Search for analysis in analyses table by URL
+  // Search for analysis in analyses table by URL (must exist for score > 70)
   let analysis: AnalysisReport | null = null;
   let analysisCreatedAt: string | null = null;
 
@@ -95,13 +95,14 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
     }
   }
 
+  if (!analysis) notFound();
+
   return (
     <InformeClient
       feedRowId={row.id}
       feedScore={row.match_score ?? 0}
       analysisReport={analysis}
       analysisCreatedAt={analysisCreatedAt}
-      apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}
       property={{
         posting_id: prop.posting_id,
         address: prop.address,

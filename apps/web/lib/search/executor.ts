@@ -130,6 +130,17 @@ export async function executeAndSave(filters: SearchFilters): Promise<ExecuteAnd
         : null,
   }));
 
+  // Trigger analysis generation for items with score > 70 (fire-and-forget)
+  const itemsNeedingAnalysis = enriched
+    .filter(({ score }) => score > 70)
+    .map(({ p }) => p);
+
+  if (itemsNeedingAnalysis.length > 0) {
+    triggerAnalysisGeneration(itemsNeedingAnalysis).catch((err) => {
+      console.warn('[executor] analysis generation failed (non-blocking):', err);
+    });
+  }
+
   return {
     search_id,
     saved: rows.length,
@@ -297,4 +308,24 @@ function fallbackSummary(p: PropiedadRow): string {
   const m2 = p.square_meters_area ? `${Math.round(p.square_meters_area)} m²` : '';
   const price = p.price_value ? `${p.price_type === 'USD' ? 'USD' : '$'} ${new Intl.NumberFormat('es-AR').format(Math.round(p.price_value))}` : '';
   return `${ambs} en ${where}${m2 ? `, ${m2}` : ''}${price ? `, ${price}` : ''}.`;
+}
+
+async function triggerAnalysisGeneration(properties: PropiedadRow[]): Promise<void> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+  for (const prop of properties) {
+    if (!prop.neighborhood) continue;
+
+    try {
+      await fetch(`${apiUrl}/analysis/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ neighborhood: prop.neighborhood }),
+        signal: AbortSignal.timeout(180000),
+      });
+      console.log(`[executor] triggered analysis for ${prop.posting_id}`);
+    } catch (err) {
+      console.warn(`[executor] failed to trigger analysis for ${prop.posting_id}:`, (err as Error).message);
+    }
+  }
 }
