@@ -80,8 +80,8 @@ function ScoreBadge({ score }: { score: number }) {
 
 export default function InformeClient({
   feedScore,
-  analysisReport: analysis,
-  analysisCreatedAt,
+  analysisReport,
+  analysisCreatedAt: initialCreatedAt,
   apiUrl,
   property: p,
 }: InformeClientProps) {
@@ -90,39 +90,82 @@ export default function InformeClient({
   const price = formatPrice(p.price_value, p.price_type);
   const exp = p.expenses_value ? `+ ${formatPrice(p.expenses_value, null)} expensas` : null;
 
-  const [isAnalyzing, setIsAnalyzing] = useState(!analysis);
+  // El análisis puede venir del server (cached) o generarse en runtime
+  const [analysis, setAnalysis] = useState<AnalysisReport | null>(analysisReport);
+  const [analysisCreatedAt, setAnalysisCreatedAt] = useState<string | null>(initialCreatedAt);
+  const [isAnalyzing, setIsAnalyzing] = useState(!analysisReport);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [hasTriggered, setHasTriggered] = useState(false);
+  const [analyzeStartedAt, setAnalyzeStartedAt] = useState<number | null>(null);
+  const [showSlowWarning, setShowSlowWarning] = useState(false);
 
   // Si no existe análisis, disparar uno en background
   useEffect(() => {
-    if (analysis || !p.neighborhood) return;
+    if (analysisReport || !p.neighborhood || hasTriggered) return;
+    setHasTriggered(true);
 
     const triggerAnalysis = async () => {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutos timeout
+
         const res = await fetch(`${apiUrl}/analysis/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ neighborhood: p.neighborhood }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({ message: 'Error desconocido' }));
           setAnalysisError((err as Record<string, string>).message || 'No se pudo analizar la propiedad');
           setIsAnalyzing(false);
+          return;
+        }
+
+        // Extraer el report del response
+        const data = (await res.json()) as unknown;
+        const report = (data as { report?: unknown }).report;
+        const createdAt = (data as { created_at?: string }).created_at;
+
+        if (report && typeof report === 'object' && 'score' in report) {
+          setAnalysis(report as AnalysisReport);
+          setAnalysisCreatedAt(createdAt ?? new Date().toISOString());
+          setIsAnalyzing(false);
         } else {
-          // El análisis se guardó. En producción, refrescaríamos la página.
-          // Para ahora, solo dejamos que el usuario la recargue.
+          setAnalysisError('No se pudo procesar el informe recibido');
           setIsAnalyzing(false);
         }
       } catch (err) {
-        setAnalysisError((err as Error).message || 'Error de conexión');
+        if ((err as Error).name === 'AbortError') {
+          setAnalysisError('El análisis tardó demasiado tiempo. Probá recargar la página en unos minutos.');
+        } else {
+          setAnalysisError((err as Error).message || 'Error de conexión');
+        }
         setIsAnalyzing(false);
       }
     };
 
+    setAnalyzeStartedAt(Date.now());
     const timer = setTimeout(triggerAnalysis, 500);
     return () => clearTimeout(timer);
-  }, [analysis, p.neighborhood]);
+  }, [analysisReport, p.neighborhood, hasTriggered, apiUrl]);
+
+  // Mostrar warning si está tardando mucho
+  useEffect(() => {
+    if (!isAnalyzing || !analyzeStartedAt) return;
+
+    const checkTimer = setInterval(() => {
+      const elapsed = Date.now() - analyzeStartedAt;
+      if (elapsed > 60000) { // Más de 1 minuto
+        setShowSlowWarning(true);
+      }
+    }, 5000);
+
+    return () => clearInterval(checkTimer);
+  }, [isAnalyzing, analyzeStartedAt]);
 
   if (!analysis) {
     return (
@@ -161,6 +204,15 @@ export default function InformeClient({
                   <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
                     Claude está analizando esta propiedad con web search. Esto puede tardar 30-90 segundos.
                   </p>
+                  {showSlowWarning && (
+                    <div style={{
+                      marginTop: 16, padding: '12px 16px', background: 'oklch(0.72 0.155 45 / 0.12)',
+                      border: '1px solid oklch(0.72 0.155 45 / 0.3)', borderRadius: 'var(--r-1)',
+                      fontSize: 13, color: 'var(--warm)',
+                    }}>
+                      ⏳ Está tardando más de lo esperado. Si sigue así mucho más tiempo, recargá la página.
+                    </div>
+                  )}
                   <p style={{ fontSize: 13, color: 'var(--fg-3)' }}>Podés volver y recargar la página en unos momentos.</p>
                 </>
               ) : analysisError ? (
@@ -168,8 +220,29 @@ export default function InformeClient({
                   <AlertTriangle size={40} style={{ margin: '0 auto 20px', color: 'var(--neg)' }} />
                   <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600, color: 'var(--neg)' }}>No se pudo generar el informe</h2>
                   <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{analysisError}</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="btn btn-acc"
+                    style={{ marginTop: 20 }}
+                  >
+                    Reintentar
+                  </button>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600 }}>Sin informe disponible</h2>
+                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
+                    No pudimos generar el informe automáticamente. Probá recargar la página.
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="btn btn-acc"
+                    style={{ marginTop: 20 }}
+                  >
+                    Recargar
+                  </button>
+                </>
+              )}
             </div>
           </main>
         </div>
