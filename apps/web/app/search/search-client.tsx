@@ -2,17 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { useRouter } from 'next/navigation';
 import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import {
   ArrowRight, Sparkles, MapPin, DollarSign, Bed, Calendar,
-  PawPrint, Home, UserCheck, ShieldCheck,
+  PawPrint, Home, UserCheck, ShieldCheck, ExternalLink, ArrowLeft, AlertTriangle,
 } from 'lucide-react';
 
 import {
   EMPTY_FILTERS, EMPTY_PROFILE,
   type ChatTurn, type ChatResponse, type ClientProfile, type SearchFilters,
+  type BackendSearchResponse, type SearchResultItem,
 } from '../../lib/search/types';
+import { composeSearchQuery } from '../../lib/search/compose-query';
+import { apiClient } from '../../lib/api-client';
 import AppSidebar from '../../components/app-sidebar';
 
 const SW = 1.6;
@@ -211,6 +213,175 @@ function FiltersRail({
   );
 }
 
+function formatPrice(p: SearchResultItem): string {
+  if (p.price_value === null) return 'Consultar';
+  const symbol = p.price_type === 'USD' ? 'USD' : '$';
+  return `${symbol} ${new Intl.NumberFormat('es-AR').format(p.price_value)}`;
+}
+
+function ResultsView({
+  results,
+  onBack,
+}: {
+  results: BackendSearchResponse;
+  onBack: () => void;
+}) {
+  const meta = results.meta_report;
+  const recommendedIds = new Set(meta?.top_recomendaciones.map((r) => r.analysis_id) ?? []);
+
+  return (
+    <section className="search-thread thread">
+      <div className="thread-head" style={{ padding: '14px 24px', gap: 12 }}>
+        <button
+          type="button"
+          onClick={onBack}
+          className="btn btn-ghost"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+        >
+          <ArrowLeft size={14} strokeWidth={SW} />
+          Volver al chat
+        </button>
+        <div className="th-info" style={{ marginLeft: 4 }}>
+          <div className="th-name">Resultados</div>
+          <div className="th-sub">{results.results.length} PROPIEDADES · CLAUDE SONNET 4.6</div>
+        </div>
+      </div>
+
+      <div className="msgs" style={{ flex: 1, overflowY: 'auto', padding: '20px 32px 32px' }}>
+        {results.notice && (
+          <div style={{
+            padding: '10px 14px', borderRadius: 12, fontSize: 13,
+            background: 'oklch(0.18 0.04 60 / 0.6)', color: 'var(--warm)',
+            border: '1px solid oklch(0.5 0.12 60 / 0.4)', marginBottom: 16,
+          }}>
+            <AlertTriangle size={13} strokeWidth={SW} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+            {results.notice}
+          </div>
+        )}
+
+        {meta && (
+          <div style={{
+            padding: 18, borderRadius: 14, marginBottom: 24,
+            border: '1px solid var(--line)', background: 'var(--bg-1)',
+          }}>
+            <div style={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+              letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 8,
+            }}>Resumen IA</div>
+            <p style={{ margin: '0 0 12px', fontSize: 14, lineHeight: 1.5, color: 'var(--fg)' }}>
+              {meta.resumen_busqueda}
+            </p>
+            {meta.trade_offs.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                  Trade-offs
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+                  {meta.trade_offs.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
+            {meta.alertas.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, color: 'var(--neg)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                  Alertas
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+                  {meta.alertas.map((a, i) => <li key={i}>{a}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {results.results.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: 40, fontSize: 14, color: 'var(--fg-3)',
+            border: '1px dashed var(--line)', borderRadius: 14,
+          }}>
+            No encontré propiedades con esos criterios. Probá relajar zona o presupuesto y volvé al chat.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            {results.results.map((r) => {
+              const recommended = recommendedIds.has(r.analysis_id);
+              const recReason = meta?.top_recomendaciones.find((x) => x.analysis_id === r.analysis_id)?.razon;
+              return (
+                <article
+                  key={r.analysis_id}
+                  style={{
+                    border: `1px solid ${recommended ? 'oklch(0.55 0.17 116 / 0.55)' : 'var(--line)'}`,
+                    borderRadius: 16, padding: 16, background: 'var(--bg-1)',
+                    display: 'flex', flexDirection: 'column', gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', letterSpacing: '-0.01em' }}>
+                        {r.address ?? 'Propiedad'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 }}>
+                        {r.neighborhood ?? '—'}
+                      </div>
+                    </div>
+                    <div style={{
+                      padding: '4px 10px', borderRadius: 999,
+                      background: r.score >= 8 ? 'oklch(0.25 0.07 116 / 0.45)' : r.score >= 6 ? 'oklch(0.25 0.07 60 / 0.45)' : 'oklch(0.25 0.07 30 / 0.4)',
+                      color: r.score >= 8 ? 'var(--acc)' : r.score >= 6 ? 'var(--warm)' : 'var(--fg-2)',
+                      fontSize: 12, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace',
+                    }}>
+                      {r.score}/10
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', fontSize: 13 }}>
+                    <span style={{ fontWeight: 500, color: 'var(--fg)' }}>{formatPrice(r)}</span>
+                    {r.rooms !== null && <span style={{ color: 'var(--fg-3)' }}>· {r.rooms} amb</span>}
+                    {r.square_meters_area !== null && <span style={{ color: 'var(--fg-3)' }}>· {Math.round(r.square_meters_area)}m²</span>}
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+                    {r.resumen_ejecutivo}
+                  </p>
+
+                  {recommended && recReason && (
+                    <div style={{
+                      fontSize: 12, padding: 10, borderRadius: 10,
+                      background: 'oklch(0.20 0.07 116 / 0.4)',
+                      border: '1px solid oklch(0.55 0.17 116 / 0.4)',
+                      color: 'var(--acc)',
+                    }}>
+                      <b>Top recomendación:</b> {recReason}
+                    </div>
+                  )}
+
+                  {r.red_flags.length > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: 'var(--neg)', lineHeight: 1.4 }}>
+                      {r.red_flags.slice(0, 3).map((f, i) => <li key={i}>{f}</li>)}
+                    </ul>
+                  )}
+
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      marginTop: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+                      fontSize: 12, color: 'var(--acc)', alignSelf: 'flex-start',
+                    }}
+                  >
+                    Ver publicación <ExternalLink size={11} strokeWidth={SW} />
+                  </a>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 interface SearchClientProps {
   initialQuery: string;
 }
@@ -223,7 +394,6 @@ interface UiMessage extends ChatTurn {
 }
 
 export default function SearchClient({ initialQuery }: SearchClientProps) {
-  const router = useRouter();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS);
   const [profile, setProfile] = useState<ClientProfile>(EMPTY_PROFILE);
@@ -235,6 +405,8 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
   const [thinking, setThinking] = useState(false);
   const [done, setDone] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<BackendSearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -341,15 +513,13 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
 
   async function handleSearch() {
     setSearching(true);
+    setSearchError(null);
     try {
-      // For now redirect to /feed with the filters in the URL. Wire to /search/query later.
-      const params = new URLSearchParams();
-      if (filters.neighborhoods.length > 0) params.set('neighborhoods', filters.neighborhoods.join(','));
-      if (filters.price_max !== null) params.set('price_max', String(filters.price_max));
-      if (filters.min_rooms !== null) params.set('min_rooms', String(filters.min_rooms));
-      if (filters.max_rooms !== null) params.set('max_rooms', String(filters.max_rooms));
-      if (filters.must_have_features.length > 0) params.set('features', filters.must_have_features.join(','));
-      router.push(`/feed?${params.toString()}`);
+      const query = composeSearchQuery(filters, profile);
+      const response = await apiClient.search.query(query);
+      setSearchResults(response);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'No pudimos hacer la búsqueda');
     } finally {
       setSearching(false);
     }
@@ -367,6 +537,9 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
         <Topbar done={done} />
         <main className="search">
 
+          {searchResults ? (
+            <ResultsView results={searchResults} onBack={() => setSearchResults(null)} />
+          ) : (
           <section className="search-thread thread">
             <div className="thread-head" style={{ padding: '14px 24px' }}>
               <div
@@ -454,7 +627,13 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
                 <ArrowRight size={16} strokeWidth={2} />
               </button>
             </div>
+            {searchError && (
+              <div style={{ color: 'var(--neg)', fontSize: 12, padding: '6px 24px 12px' }}>
+                {searchError}
+              </div>
+            )}
           </section>
+          )}
 
           <FiltersRail
             filters={filters}

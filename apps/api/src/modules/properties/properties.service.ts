@@ -64,6 +64,29 @@ export class PropertiesService {
     return Array.from(seen).sort((a, b) => a.localeCompare(b, 'es'));
   }
 
+  async findByPostingId(posting_id: string): Promise<PropertyData> {
+    const { data, error } = await this.supabase.admin
+      .from(this.table)
+      .select(
+        'url, posting_id, posting_type, address, neighborhood, location_label, city, latitude, longitude, price_value, price_type, expenses_value, expenses_type, square_meters_area, rooms, bedrooms, bathrooms, parking, location, description, image_urls',
+      )
+      .eq('posting_id', posting_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error(`failed to fetch property ${posting_id}: ${error.message}`);
+      throw new Error(`Failed to query properties: ${error.message}`);
+    }
+    if (!data) {
+      throw new NotFoundException(
+        `No existe una propiedad con posting_id "${posting_id}"`,
+      );
+    }
+
+    return this.toPropertyData(data as PropiedadRow);
+  }
+
   async findFirstByNeighborhood(neighborhood: string): Promise<PropertyData> {
     const { data, error } = await this.supabase.admin
       .from(this.table)

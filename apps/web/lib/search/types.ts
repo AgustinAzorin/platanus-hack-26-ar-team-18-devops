@@ -63,3 +63,53 @@ export interface ChatResponse {
   done: boolean;                  // true when filters + required profile are ready
   suggestions: string[];          // 0–4 quick-reply chips. Click sends as a user turn.
 }
+
+// ─── Backend /search/query response (mirrors apps/api/src/modules/search/search.types.ts) ───
+
+export interface BackendSearchFilters {
+  neighborhoods: string[];
+  price_max: number | null;
+  price_currency: 'ARS' | 'USD';
+  operation_type: 'venta' | 'alquiler';
+  must_have_features: string[];
+  min_score: number | null;
+  min_rooms: number | null;
+  max_rooms: number | null;
+  free_text_query: string | null;
+}
+
+export interface SearchResultItem {
+  analysis_id: string;
+  url: string;
+  address: string | null;
+  neighborhood: string | null;
+  price_value: number | null;
+  price_type: string | null;
+  rooms: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  square_meters_area: number | null;
+  score: number;
+  resumen_ejecutivo: string;
+  red_flags: string[];
+}
+
+export interface MetaReportRecommendation {
+  analysis_id: string;
+  razon: string;
+}
+
+export interface MetaReport {
+  resumen_busqueda: string;
+  top_recomendaciones: MetaReportRecommendation[];
+  trade_offs: string[];
+  alertas: string[];
+}
+
+export interface BackendSearchResponse {
+  query: string;
+  filters: BackendSearchFilters;
+  results: SearchResultItem[];
+  meta_report: MetaReport | null;
+  notice: string | null;
+}

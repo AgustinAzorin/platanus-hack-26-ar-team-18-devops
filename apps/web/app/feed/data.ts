@@ -117,7 +117,24 @@ async function fetchAiFeed(limit: number): Promise<FeedCard[]> {
     if (error) console.warn('[feed] feed_results query failed (table may not exist yet):', error.message);
     return [];
   }
-  const rows = data as FeedResultRow[];
+  const allRows = data as FeedResultRow[];
+
+  // Only show rows whose property has an actual analysis row. Otherwise the
+  // "Ver informe" button leads to a 404 because /informe/[id] requires the
+  // analysis to exist.
+  const postingIds = allRows.map((r) => r.posting_id);
+  const { data: analysisRows } = await supabase
+    .from('analyses')
+    .select('posting_id')
+    .in('posting_id', postingIds);
+  const withAnalysis = new Set<string>(
+    ((analysisRows ?? []) as Array<{ posting_id: string | null }>)
+      .map((a) => a.posting_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const rows = allRows.filter((r) => withAnalysis.has(r.posting_id));
+
+  if (rows.length === 0) return [];
 
   // Join with propiedades for the rendering details.
   const propsByPosting = await fetchPropiedadesMap(rows.map((r) => r.posting_id));

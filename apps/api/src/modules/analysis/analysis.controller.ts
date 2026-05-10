@@ -25,9 +25,16 @@ export class AnalysisController {
   }
 
   @Post('analyze')
-  @ApiOperation({ summary: 'Analyze the first property found for a given neighborhood' })
+  @ApiOperation({
+    summary:
+      'Analyze a property. Pass `posting_id` to target a specific property; ' +
+      '`neighborhood` falls back to the first property in that neighborhood.',
+  })
   analyze(@Body() body: AnalyzePropertyDto): Promise<AnalyzePropertyResponse> {
-    return this.analysis.analyzeByNeighborhood(body.neighborhood);
+    if (body.posting_id) {
+      return this.analysis.analyzeByPostingId(body.posting_id);
+    }
+    return this.analysis.analyzeByNeighborhood(body.neighborhood as string);
   }
 
   @Post('backfill-embeddings')

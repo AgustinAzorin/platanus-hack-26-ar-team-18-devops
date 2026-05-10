@@ -69,19 +69,35 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
 
   const prop = propRow as PropiedadRow;
 
-  // Build full zonaprop URL
+  // Build full zonaprop URL (used as a back-compat lookup and for the "Ver en
+  // Zonaprop" button)
   const zonapropUrl = prop.url
     ? prop.url.startsWith('http')
       ? prop.url
       : `https://www.zonaprop.com.ar${prop.url}`
     : null;
 
-  // Search for analysis in analyses table by URL (must exist for score > 70)
+  // Find the analysis linked to this specific property. The chat-driven
+  // executor persists analyses with the property's posting_id, so we look up
+  // by FK instead of by URL (URL was unreliable: the API used to analyze the
+  // first property of a neighborhood, leaving stale URLs in `analyses`).
   let analysis: AnalysisReport | null = null;
   let analysisCreatedAt: string | null = null;
 
-  if (zonapropUrl) {
-    const { data: analysisRow } = await supabase
+  const { data: analysisRow } = await supabase
+    .from('analyses')
+    .select('id, report, created_at')
+    .eq('posting_id', row.posting_id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (analysisRow) {
+    analysis = (analysisRow as AnalysisRow).report;
+    analysisCreatedAt = (analysisRow as AnalysisRow).created_at;
+  } else if (zonapropUrl) {
+    // Back-compat fallback: rows persisted before posting_id existed.
+    const { data: legacyRow } = await supabase
       .from('analyses')
       .select('id, report, created_at')
       .eq('url', zonapropUrl)
@@ -89,9 +105,9 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
       .limit(1)
       .maybeSingle();
 
-    if (analysisRow) {
-      analysis = (analysisRow as AnalysisRow).report;
-      analysisCreatedAt = (analysisRow as AnalysisRow).created_at;
+    if (legacyRow) {
+      analysis = (legacyRow as AnalysisRow).report;
+      analysisCreatedAt = (legacyRow as AnalysisRow).created_at;
     }
   }
 

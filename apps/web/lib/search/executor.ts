@@ -314,13 +314,13 @@ async function triggerAnalysisGeneration(properties: PropiedadRow[]): Promise<vo
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
   for (const prop of properties) {
-    if (!prop.neighborhood) continue;
+    if (!prop.posting_id) continue;
 
     try {
       await fetch(`${apiUrl}/analysis/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ neighborhood: prop.neighborhood }),
+        body: JSON.stringify({ posting_id: prop.posting_id }),
         signal: AbortSignal.timeout(180000),
       });
       console.log(`[executor] triggered analysis for ${prop.posting_id}`);

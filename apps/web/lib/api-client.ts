@@ -13,6 +13,7 @@ import type {
 import type { z } from 'zod';
 
 import { env } from './env';
+import type { BackendSearchResponse } from './search/types';
 
 class ApiError extends Error {
   constructor(public readonly status: number, message: string, public readonly body: unknown) {
@@ -74,6 +75,30 @@ export const apiClient = {
         body: JSON.stringify({ neighborhood }),
         schema: AnalyzePropertyResponseSchema,
       });
+    },
+  },
+  search: {
+    /**
+     * Calls the NestJS `/search/query` endpoint. The backend pipeline:
+     *   1. Translator (Claude) parses `query` into structured filters.
+     *   2. Executor queries Supabase + pgvector embeddings.
+     *   3. Summarizer (Claude) builds a meta-report over the top results.
+     * No Zod validation here yet because the schema isn't in @repo/types;
+     * we trust the backend shape.
+     */
+    async query(query: string): Promise<BackendSearchResponse> {
+      const res = await fetch(`${env.NEXT_PUBLIC_API_URL}/search/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        cache: 'no-store',
+      });
+      const text = await res.text();
+      const json: unknown = text ? JSON.parse(text) : null;
+      if (!res.ok) {
+        throw new ApiError(res.status, `API POST /search/query failed`, json);
+      }
+      return json as BackendSearchResponse;
     },
   },
 };
