@@ -20,6 +20,8 @@ export interface FeedCard {
   status: CardStatus;
   statusKind: 'responded-fed' | 'casita-wrote' | 'pending' | 'casita-called' | 'mariana' | 'discarded' | 'casita-no-response' | 'ai-report';
   statusMin: number; // for "hace X min"
+  priceValue: number | null; // raw numeric, used to sort by price
+  createdAtMs: number;       // epoch ms, used to sort by recency
   sourceUrl: string;
   summary: string | null;
   pros?: string[];
@@ -140,6 +142,8 @@ async function fetchAnalysisFeed(limit?: number): Promise<FeedCard[]> {
       approveAction: 'feed-decide',
       feedRowId: r.id,
       matchScore: score,
+      priceValue: p.price_value,
+      createdAtMs: new Date(r.created_at).getTime(),
     });
   }
   return out;

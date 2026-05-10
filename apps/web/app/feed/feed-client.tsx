@@ -60,9 +60,20 @@ interface FeedClientProps {
   summary: FeedSummary;
 }
 
+type SortMode = 'match' | 'price' | 'recent';
+type SortDir  = 'asc' | 'desc';
+
+// Default direction per mode: match high→low, price low→high, recent new→old.
+const DEFAULT_DIR: Record<SortMode, SortDir> = {
+  match:  'desc',
+  price:  'asc',
+  recent: 'desc',
+};
+
 export default function FeedClient({ cards: initialCards, summary }: FeedClientProps) {
   const [cards] = useState<FeedCard[]>(initialCards);
   const [threshold, setThreshold] = useState(70);
+  const [sort, setSort] = useState<{ mode: SortMode; dir: SortDir }>({ mode: 'match', dir: 'desc' });
   const [mounted, setMounted] = useState(false);
   const animatedRef = useRef(false);
 
@@ -76,11 +87,45 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
     localStorage.setItem('feedScoreThreshold', String(v));
   }
 
+  function handleSortClick(mode: SortMode) {
+    setSort((prev) =>
+      prev.mode === mode
+        ? { mode, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { mode, dir: DEFAULT_DIR[mode] },
+    );
+  }
+
   const aiFeedCards = cards.filter((c) => c.approveAction === 'feed-decide');
   const aboveCards = aiFeedCards.filter((c) => c.score >= threshold);
   const belowCards = aiFeedCards.filter((c) => c.score < threshold);
   const otherCards = cards.filter((c) => c.approveAction !== 'feed-decide');
-  const orderedCards = [...otherCards, ...aboveCards, ...belowCards];
+
+  // Sort each bucket independently. The threshold split (above/below) is
+  // preserved across all sort modes — match/price/recent only changes the
+  // order within each bucket.
+  const sortFn = (a: FeedCard, b: FeedCard): number => {
+    let cmp: number;
+    if (sort.mode === 'price') {
+      const pa = a.priceValue ?? Number.POSITIVE_INFINITY;
+      const pb = b.priceValue ?? Number.POSITIVE_INFINITY;
+      cmp = pa - pb;
+    } else if (sort.mode === 'recent') {
+      cmp = a.createdAtMs - b.createdAtMs;
+    } else {
+      cmp = a.score - b.score; // match
+    }
+    return sort.dir === 'asc' ? cmp : -cmp;
+  };
+  // Below-threshold cards are hidden entirely (not rendered) to keep the DOM
+  // small and make threshold changes feel instant. The bucket is still
+  // computed so the header can show how many were dropped.
+  const orderedCards = [
+    ...[...otherCards].sort(sortFn),
+    ...[...aboveCards].sort(sortFn),
+  ];
+
+  const arrow = (mode: SortMode) =>
+    sort.mode === mode ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -135,7 +180,7 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
               </h1>
               <p className="sub">
                 {summary.fromAI
-                  ? `Casita IA generó ${cards.length} informes. ${aboveCards.length} superan el umbral de score ${threshold} y tienen informe disponible. ${belowCards.length > 0 ? `${belowCards.length} quedaron por debajo del umbral y se marcaron como descartadas.` : ''}`
+                  ? `Casita IA generó ${cards.length} informes. ${aboveCards.length} superan el umbral de score ${threshold}.${belowCards.length > 0 ? ` ${belowCards.length} quedaron ocultos por debajo del umbral — bajalo para verlos.` : ''}`
                   : `De ${summary.scanned} listings encontrados, Casita descartó ${summary.scanned - summary.filtered} por contrafrente, expensas escondidas, fotos repetidas o requisitos imposibles. Estos quedaron.`}
               </p>
             </div>
@@ -187,9 +232,9 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
               )}
               <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Ordenar:</span>
               <div className="seg">
-                <button className="on">Match</button>
-                <button>Precio ↑</button>
-                <button>Recientes</button>
+                <button className={sort.mode === 'match'  ? 'on' : ''} onClick={() => handleSortClick('match')}>Match{arrow('match')}</button>
+                <button className={sort.mode === 'price'  ? 'on' : ''} onClick={() => handleSortClick('price')}>Precio{arrow('price')}</button>
+                <button className={sort.mode === 'recent' ? 'on' : ''} onClick={() => handleSortClick('recent')}>Recientes{arrow('recent')}</button>
               </div>
             </div>
           </div>
@@ -197,7 +242,13 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
           <div className="feed-layout">
             <div>
               <div className="meta-row">
-                <span><b>{cards.length}</b> resultados</span>
+                <span><b>{orderedCards.length}</b> resultados</span>
+                {summary.fromAI && belowCards.length > 0 && (
+                  <>
+                    <span style={{ color: 'var(--line-2)' }}>·</span>
+                    <span style={{ color: 'var(--fg-3)' }}>{belowCards.length} ocultos por umbral</span>
+                  </>
+                )}
                 <span style={{ color: 'var(--line-2)' }}>·</span>
                 <span>actualizado hace <b>2 min</b></span>
                 <span style={{ color: 'var(--line-2)' }}>·</span>
@@ -206,9 +257,8 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
 
               <div className="cards">
                 {orderedCards.map((c) => {
-                  const isBelowThreshold = c.approveAction === 'feed-decide' && c.score < threshold;
                   return (
-                    <article key={c.id} className={`pcard${c.discarded || isBelowThreshold ? ' discarded' : ''}`}>
+                    <article key={c.id} className={`pcard${c.discarded ? ' discarded' : ''}`}>
                       <div className="img-wrap">
                         <div
                           className={`ph-img${c.imgUrl ? ' ph-img-photo' : ''}`}
@@ -251,32 +301,20 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
                           </p>
                         )}
 
-                        {isBelowThreshold ? (
-                          <div className="status-row discarded">
-                            <span className="sdot" />
-                            <span>
-                              <b style={{ color: 'var(--neg)' }}>Descartado</b>
-                              {' · '}score {c.score} bajo umbral {threshold}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className={`status-row ${c.status}`}>
-                            <span className="sdot" />
-                            <span>{statusContent(c)}</span>
-                          </div>
-                        )}
+                        <div className={`status-row ${c.status}`}>
+                          <span className="sdot" />
+                          <span>{statusContent(c)}</span>
+                        </div>
 
                         <div className="card-actions">
                           {c.approveAction === 'feed-decide' ? (
-                            isBelowThreshold ? null : (
-                              <a
-                                href={`/informe/${c.feedRowId}`}
-                                className="btn btn-acc"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                              >
-                                <FileText size={13} strokeWidth={SW} /> Ver informe
-                              </a>
-                            )
+                            <a
+                              href={`/informe/${c.feedRowId}`}
+                              className="btn btn-acc"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                            >
+                              <FileText size={13} strokeWidth={SW} /> Ver informe
+                            </a>
                           ) : c.approveAction === 'approve-detail' ? (
                             <>
                               <a href="/pending" className="btn btn-warm">Aprobar</a>

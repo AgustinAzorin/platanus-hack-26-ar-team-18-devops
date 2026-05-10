@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Search, Layers, MessageSquare, Bell, BarChart2, Wand2,
+  Search, Layers, MessageSquare, Bell, BarChart2, Wand2, LogOut,
 } from 'lucide-react';
 
 import { createClient as createBrowserSupabase } from '../lib/supabase/client';
+import { signOut } from '../app/login/actions';
 
 const SW = 1.6;
 
@@ -50,9 +51,17 @@ export interface AppSidebarProps {
   initialCounts?: Partial<SidebarCounts>;
 }
 
+interface SidebarUser {
+  email: string;
+  name: string | null;
+  initial: string;
+}
+
 export default function AppSidebar({ initialCounts }: AppSidebarProps) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>({ ...EMPTY_COUNTS, ...initialCounts });
+  const [user, setUser] = useState<SidebarUser | null>(null);
+  const [isPendingSignOut, startSignOut] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +78,16 @@ export default function AppSidebar({ initialCounts }: AppSidebarProps) {
     void refresh();
 
     const supabase = createBrowserSupabase();
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (cancelled || !data.user) return;
+      const meta = data.user.user_metadata as { name?: string } | undefined;
+      const name = (meta?.name ?? '').trim() || null;
+      const email = data.user.email ?? '';
+      const initial = (name?.[0] ?? email[0] ?? '?').toUpperCase();
+      setUser({ email, name, initial });
+    });
+
     const channel = supabase
       .channel('sidebar-counts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => {
@@ -84,6 +103,12 @@ export default function AppSidebar({ initialCounts }: AppSidebarProps) {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  function handleSignOut() {
+    startSignOut(() => {
+      void signOut();
+    });
+  }
 
   const groups = NAV.reduce<Record<string, NavItem[]>>((acc, item) => {
     (acc[item.group] ??= []).push(item);
@@ -133,12 +158,24 @@ export default function AppSidebar({ initialCounts }: AppSidebarProps) {
       ))}
       <div className="side-foot">
         <div className="user">
-          <div className="avatar">M</div>
+          <div className="avatar">{user?.initial ?? '·'}</div>
           <div className="who">
-            Martina Ríos
-            <small>Plan agente · BA</small>
+            {user?.name ?? user?.email ?? 'Cargando…'}
+            <small>{user ? 'Plan agente · BA' : ''}</small>
           </div>
-          <div className="status" title="Bot activo" />
+          <button
+            onClick={handleSignOut}
+            disabled={isPendingSignOut}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+            style={{
+              display: 'grid', placeItems: 'center', width: 28, height: 28, borderRadius: 8,
+              color: 'var(--fg-2)', cursor: 'pointer',
+              opacity: isPendingSignOut ? 0.5 : 1,
+            }}
+          >
+            <LogOut size={14} strokeWidth={SW} />
+          </button>
         </div>
       </div>
     </aside>
