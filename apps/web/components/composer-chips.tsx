@@ -407,14 +407,19 @@ function BudgetPopoverBody({
             <option value="USD">USD</option>
           </select>
           <input
-            type="number"
+            // type="text" with inputMode="numeric" avoids the browser's native
+            // up/down spinner buttons (they render with a white background that
+            // clashes with the dark theme) while keeping the mobile numeric keypad.
+            type="text"
             inputMode="numeric"
-            min={0}
-            step={50000}
-            value={amount === 0 ? '' : amount}
-            placeholder="500000"
+            pattern="[0-9]*"
+            value={amount === 0 ? '' : new Intl.NumberFormat('es-AR').format(amount)}
+            placeholder="500.000"
             autoFocus
-            onChange={(e) => setAmount(Number(e.target.value) || 0)}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, '');
+              setAmount(digits.length === 0 ? 0 : Number(digits));
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();

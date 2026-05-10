@@ -153,22 +153,14 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
           </header>
 
           <div className="filters">
-            <div className="grp">
-              <span className="f-chip on">Todas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{cards.length}</span></span>
-              {!summary.fromAI && (
-                <>
-                  <span className="f-chip">Sin contactar <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{Math.max(0, summary.total - summary.contacted - summary.discarded - summary.pending)}</span></span>
-                  <span className="f-chip">Esperando respuesta <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.contacted - summary.responded}</span></span>
-                  <span className="f-chip acc">Respondieron <span className="mono" style={{ marginLeft: 4 }}>{summary.responded}</span></span>
-                  <span className="f-chip">Descartadas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.discarded}</span></span>
-                </>
-              )}
-            </div>
-            <div className="grp">
-              <span className="f-chip">ArgenProp</span>
-              <span className="f-chip">Zonaprop</span>
-              <span className="f-chip">M. Libre</span>
-            </div>
+            {!summary.fromAI && (
+              <div className="grp">
+                <span className="f-chip">Sin contactar <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{Math.max(0, summary.total - summary.contacted - summary.discarded - summary.pending)}</span></span>
+                <span className="f-chip">Esperando respuesta <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.contacted - summary.responded}</span></span>
+                <span className="f-chip acc">Respondieron <span className="mono" style={{ marginLeft: 4 }}>{summary.responded}</span></span>
+                <span className="f-chip">Descartadas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.discarded}</span></span>
+              </div>
+            )}
             <div className="right" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               {summary.fromAI && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
