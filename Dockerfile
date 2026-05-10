@@ -52,8 +52,14 @@ USER nestjs
 COPY --from=installer --chown=nestjs:nodejs /repo/node_modules ./node_modules
 COPY --from=installer --chown=nestjs:nodejs /repo/apps/api/dist ./apps/api/dist
 COPY --from=installer --chown=nestjs:nodejs /repo/apps/api/package.json ./apps/api/package.json
-COPY --from=installer --chown=nestjs:nodejs /repo/packages ./packages
 COPY --from=installer --chown=nestjs:nodejs /repo/package.json ./package.json
+
+# Workspace packages arrive as broken symlinks after COPY --from; overwrite
+# them with the compiled dist so Node can resolve @repo/* without symlinks.
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/database/dist ./node_modules/@repo/database/dist
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/database/package.json ./node_modules/@repo/database/package.json
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/types/dist ./node_modules/@repo/types/dist
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/types/package.json ./node_modules/@repo/types/package.json
 
 EXPOSE 4000
 ENTRYPOINT ["/sbin/tini", "--"]
