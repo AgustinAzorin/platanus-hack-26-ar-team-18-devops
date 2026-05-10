@@ -80,8 +80,8 @@ function ScoreBadge({ score }: { score: number }) {
 
 export default function InformeClient({
   feedScore,
-  analysisReport: analysis,
-  analysisCreatedAt,
+  analysisReport,
+  analysisCreatedAt: initialCreatedAt,
   apiUrl,
   property: p,
 }: InformeClientProps) {
@@ -90,12 +90,17 @@ export default function InformeClient({
   const price = formatPrice(p.price_value, p.price_type);
   const exp = p.expenses_value ? `+ ${formatPrice(p.expenses_value, null)} expensas` : null;
 
-  const [isAnalyzing, setIsAnalyzing] = useState(!analysis);
+  // El análisis puede venir del server (cached) o generarse en runtime
+  const [analysis, setAnalysis] = useState<AnalysisReport | null>(analysisReport);
+  const [analysisCreatedAt, setAnalysisCreatedAt] = useState<string | null>(initialCreatedAt);
+  const [isAnalyzing, setIsAnalyzing] = useState(!analysisReport);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [hasTriggered, setHasTriggered] = useState(false);
 
   // Si no existe análisis, disparar uno en background
   useEffect(() => {
-    if (analysis || !p.neighborhood) return;
+    if (analysisReport || !p.neighborhood || hasTriggered) return;
+    setHasTriggered(true);
 
     const triggerAnalysis = async () => {
       try {
@@ -109,9 +114,17 @@ export default function InformeClient({
           const err = await res.json().catch(() => ({ message: 'Error desconocido' }));
           setAnalysisError((err as Record<string, string>).message || 'No se pudo analizar la propiedad');
           setIsAnalyzing(false);
+          return;
+        }
+
+        // Extraer el report del response
+        const data = (await res.json()) as { report?: AnalysisReport; created_at?: string };
+        if (data.report) {
+          setAnalysis(data.report);
+          setAnalysisCreatedAt(data.created_at ?? new Date().toISOString());
+          setIsAnalyzing(false);
         } else {
-          // El análisis se guardó. En producción, refrescaríamos la página.
-          // Para ahora, solo dejamos que el usuario la recargue.
+          setAnalysisError('La respuesta del servidor no incluye el informe');
           setIsAnalyzing(false);
         }
       } catch (err) {
@@ -122,7 +135,7 @@ export default function InformeClient({
 
     const timer = setTimeout(triggerAnalysis, 500);
     return () => clearTimeout(timer);
-  }, [analysis, p.neighborhood]);
+  }, [analysisReport, p.neighborhood, hasTriggered, apiUrl]);
 
   if (!analysis) {
     return (
@@ -168,8 +181,29 @@ export default function InformeClient({
                   <AlertTriangle size={40} style={{ margin: '0 auto 20px', color: 'var(--neg)' }} />
                   <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600, color: 'var(--neg)' }}>No se pudo generar el informe</h2>
                   <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{analysisError}</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="btn btn-acc"
+                    style={{ marginTop: 20 }}
+                  >
+                    Reintentar
+                  </button>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600 }}>Sin informe disponible</h2>
+                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
+                    No pudimos generar el informe automáticamente. Probá recargar la página.
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="btn btn-acc"
+                    style={{ marginTop: 20 }}
+                  >
+                    Recargar
+                  </button>
+                </>
+              )}
             </div>
           </main>
         </div>
