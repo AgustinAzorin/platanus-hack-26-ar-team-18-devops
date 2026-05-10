@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ArrowLeft, ExternalLink, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
+import { ArrowLeft, ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
 import type { AnalysisReport } from '@repo/types';
 
 import AppSidebar from '../../../components/app-sidebar';
@@ -29,9 +28,8 @@ interface PropertyInfo {
 interface InformeClientProps {
   feedRowId: string;
   feedScore: number;
-  analysisReport: AnalysisReport | null;
-  analysisCreatedAt: string | null;
-  apiUrl: string;
+  analysisReport: AnalysisReport;
+  analysisCreatedAt: string;
   property: PropertyInfo;
 }
 
@@ -80,9 +78,8 @@ function ScoreBadge({ score }: { score: number }) {
 
 export default function InformeClient({
   feedScore,
-  analysisReport,
-  analysisCreatedAt: initialCreatedAt,
-  apiUrl,
+  analysisReport: analysis,
+  analysisCreatedAt,
   property: p,
 }: InformeClientProps) {
   const cover = p.image_urls[0] ?? null;
@@ -90,179 +87,10 @@ export default function InformeClient({
   const price = formatPrice(p.price_value, p.price_type);
   const exp = p.expenses_value ? `+ ${formatPrice(p.expenses_value, null)} expensas` : null;
 
-  // El análisis puede venir del server (cached) o generarse en runtime
-  const [analysis, setAnalysis] = useState<AnalysisReport | null>(analysisReport);
-  const [analysisCreatedAt, setAnalysisCreatedAt] = useState<string | null>(initialCreatedAt);
-  const [isAnalyzing, setIsAnalyzing] = useState(!analysisReport);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [hasTriggered, setHasTriggered] = useState(false);
-  const [analyzeStartedAt, setAnalyzeStartedAt] = useState<number | null>(null);
-  const [showSlowWarning, setShowSlowWarning] = useState(false);
-
-  // Si no existe análisis, disparar uno en background
-  useEffect(() => {
-    if (analysisReport || !p.neighborhood || hasTriggered) return;
-    setHasTriggered(true);
-
-    const triggerAnalysis = async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutos timeout
-
-        const res = await fetch(`${apiUrl}/analysis/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ neighborhood: p.neighborhood }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ message: 'Error desconocido' }));
-          setAnalysisError((err as Record<string, string>).message || 'No se pudo analizar la propiedad');
-          setIsAnalyzing(false);
-          return;
-        }
-
-        // Extraer el report del response
-        const data = (await res.json()) as unknown;
-        const report = (data as { report?: unknown }).report;
-        const createdAt = (data as { created_at?: string }).created_at;
-
-        if (report && typeof report === 'object' && 'score' in report) {
-          setAnalysis(report as AnalysisReport);
-          setAnalysisCreatedAt(createdAt ?? new Date().toISOString());
-          setIsAnalyzing(false);
-        } else {
-          setAnalysisError('No se pudo procesar el informe recibido');
-          setIsAnalyzing(false);
-        }
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') {
-          setAnalysisError('El análisis tardó demasiado tiempo. Probá recargar la página en unos minutos.');
-        } else {
-          setAnalysisError((err as Error).message || 'Error de conexión');
-        }
-        setIsAnalyzing(false);
-      }
-    };
-
-    setAnalyzeStartedAt(Date.now());
-    const timer = setTimeout(triggerAnalysis, 500);
-    return () => clearTimeout(timer);
-  }, [analysisReport, p.neighborhood, hasTriggered, apiUrl]);
-
-  // Mostrar warning si está tardando mucho
-  useEffect(() => {
-    if (!isAnalyzing || !analyzeStartedAt) return;
-
-    const checkTimer = setInterval(() => {
-      const elapsed = Date.now() - analyzeStartedAt;
-      if (elapsed > 60000) { // Más de 1 minuto
-        setShowSlowWarning(true);
-      }
-    }, 5000);
-
-    return () => clearInterval(checkTimer);
-  }, [isAnalyzing, analyzeStartedAt]);
-
-  if (!analysis) {
-    return (
-      <div className="app">
-        <AppSidebar />
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="topbar">
-            <div className="crumb">
-              <a href="/feed" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--fg-2)' }}>
-                <ArrowLeft size={14} strokeWidth={SW} /> Volver al feed
-              </a>
-              <span style={{ color: 'var(--fg-3)', margin: '0 8px' }}>/</span>
-              <b>Informe IA</b>
-            </div>
-            {p.zonapropUrl && (
-              <div className="right">
-                <a
-                  href={p.zonapropUrl}
-                  className="btn btn-ghost"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                  Ver en Zonaprop <ExternalLink size={12} strokeWidth={SW} />
-                </a>
-              </div>
-            )}
-          </div>
-
-          <main style={{ padding: '40px 56px 80px', maxWidth: 900, width: '100%' }}>
-            <div style={{ textAlign: 'center', paddingTop: 40 }}>
-              {isAnalyzing ? (
-                <>
-                  <Loader size={40} style={{ margin: '0 auto 20px', animation: 'spin 1s linear infinite' }} />
-                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600 }}>Generando informe completo…</h2>
-                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
-                    Claude está analizando esta propiedad con web search. Esto puede tardar 30-90 segundos.
-                  </p>
-                  {showSlowWarning && (
-                    <div style={{
-                      marginTop: 16, padding: '12px 16px', background: 'oklch(0.72 0.155 45 / 0.12)',
-                      border: '1px solid oklch(0.72 0.155 45 / 0.3)', borderRadius: 'var(--r-1)',
-                      fontSize: 13, color: 'var(--warm)',
-                    }}>
-                      ⏳ Está tardando más de lo esperado. Si sigue así mucho más tiempo, recargá la página.
-                    </div>
-                  )}
-                  <p style={{ fontSize: 13, color: 'var(--fg-3)' }}>Podés volver y recargar la página en unos momentos.</p>
-                </>
-              ) : analysisError ? (
-                <>
-                  <AlertTriangle size={40} style={{ margin: '0 auto 20px', color: 'var(--neg)' }} />
-                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600, color: 'var(--neg)' }}>No se pudo generar el informe</h2>
-                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{analysisError}</p>
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="btn btn-acc"
-                    style={{ marginTop: 20 }}
-                  >
-                    Reintentar
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600 }}>Sin informe disponible</h2>
-                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
-                    No pudimos generar el informe automáticamente. Probá recargar la página.
-                  </p>
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="btn btn-acc"
-                    style={{ marginTop: 20 }}
-                  >
-                    Recargar
-                  </button>
-                </>
-              )}
-            </div>
-          </main>
-        </div>
-
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
-  // Si existe análisis, mostrar completo
   return (
     <div className="app">
       <AppSidebar />
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-
-        {/* Topbar */}
         <div className="topbar">
           <div className="crumb">
             <a href="/feed" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--fg-2)' }}>
@@ -292,14 +120,11 @@ export default function InformeClient({
         </div>
 
         <main style={{ padding: '40px 56px 80px', maxWidth: 900, width: '100%' }}>
-
-          {/* Eyebrow */}
           <div className="eyebrow" style={{ marginBottom: 24 }}>
             <span className="dot" />
             ANÁLISIS COMPLETO IA
           </div>
 
-          {/* Property card */}
           <div style={{
             background: 'var(--bg-1)', border: '1px solid var(--line)',
             borderRadius: 'var(--r-3)', overflow: 'hidden', marginBottom: 32,
@@ -358,7 +183,6 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Score + justificación */}
           <div style={{
             background: 'var(--bg-1)', border: '1px solid var(--line)',
             borderRadius: 'var(--r-3)', padding: '28px', marginBottom: 24,
@@ -378,7 +202,6 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Veredicto */}
           <div style={{
             background: 'oklch(0.92 0.205 116 / 0.08)', border: '1px solid oklch(0.92 0.205 116 / 0.3)',
             borderRadius: 'var(--r-3)', padding: '20px 24px', marginBottom: 24,
@@ -394,7 +217,6 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Inmueble */}
           <div style={{
             background: 'var(--bg-1)', border: '1px solid var(--line)',
             borderRadius: 'var(--r-3)', padding: '24px', marginBottom: 24,
@@ -420,7 +242,6 @@ export default function InformeClient({
                 </p>
               </div>
 
-              {/* Costos */}
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', marginBottom: 10 }}>Costo total estimado mensual</div>
                 <div style={{
@@ -464,7 +285,6 @@ export default function InformeClient({
                 </div>
               </div>
 
-              {/* Red flags */}
               {analysis.inmueble.red_flags.length > 0 && (
                 <div>
                   <div style={{
@@ -487,7 +307,6 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Entorno */}
           <div style={{
             background: 'var(--bg-1)', border: '1px solid var(--line)',
             borderRadius: 'var(--r-3)', padding: '24px', marginBottom: 24,
@@ -519,7 +338,6 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Preguntas para la inmobiliaria */}
           {analysis.preguntas_inmobiliaria.length > 0 && (
             <div style={{
               background: 'var(--bg-1)', border: '1px solid var(--line)',
@@ -543,7 +361,6 @@ export default function InformeClient({
             </div>
           )}
 
-          {/* CTA row */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <a href="/feed" className="btn btn-ghost">← Volver al feed</a>
             {p.zonapropUrl && (
