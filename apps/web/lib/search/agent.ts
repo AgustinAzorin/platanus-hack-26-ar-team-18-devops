@@ -177,28 +177,53 @@ export async function runChatTurn({ messages, filters, profile, selectedPills }:
 }
 
 function parseAgentJson(raw: string, fallbackFilters: SearchFilters): AgentOutput {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-  try {
-    const parsed = JSON.parse(cleaned) as Partial<AgentOutput> & { profile_updates?: ProfileUpdates };
-    const suggestions = Array.isArray(parsed.suggestions)
-      ? parsed.suggestions.filter((s): s is string => typeof s === 'string').slice(0, 4)
-      : [];
-    return {
-      message: typeof parsed.message === 'string' ? parsed.message : '¿Podés contarme un poco más?',
-      filters: { ...EMPTY_FILTERS, ...fallbackFilters, ...(parsed.filters ?? {}) } as SearchFilters,
-      profile_updates: parsed.profile_updates ?? {},
-      done: Boolean(parsed.done),
-      suggestions,
-    };
-  } catch {
-    return {
-      message: cleaned || '¿Podés contarme un poco más?',
-      filters: fallbackFilters,
-      profile_updates: {},
-      done: false,
-      suggestions: [],
-    };
+  function tryParse(s: string): AgentOutput | null {
+    try {
+      const parsed = JSON.parse(s.trim()) as Partial<AgentOutput> & { profile_updates?: ProfileUpdates };
+      const suggestions = Array.isArray(parsed.suggestions)
+        ? parsed.suggestions.filter((su): su is string => typeof su === 'string').slice(0, 4)
+        : [];
+      return {
+        message: typeof parsed.message === 'string' ? parsed.message : '¿Podés contarme un poco más?',
+        filters: { ...EMPTY_FILTERS, ...fallbackFilters, ...(parsed.filters ?? {}) } as SearchFilters,
+        profile_updates: parsed.profile_updates ?? {},
+        done: Boolean(parsed.done),
+        suggestions,
+      };
+    } catch {
+      return null;
+    }
   }
+
+  // Try 1: strip code fences at start/end
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  const r1 = tryParse(cleaned);
+  if (r1) return r1;
+
+  // Try 2: find ```json ... ``` block anywhere in the string (Claude sometimes prepends text)
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch?.[1]) {
+    const r2 = tryParse(fenceMatch[1]);
+    if (r2) return r2;
+  }
+
+  // Try 3: find outermost JSON object by first { and last }
+  const jsonStart = cleaned.indexOf('{');
+  const jsonEnd = cleaned.lastIndexOf('}');
+  if (jsonStart !== -1 && jsonEnd > jsonStart) {
+    const r3 = tryParse(cleaned.slice(jsonStart, jsonEnd + 1));
+    if (r3) return r3;
+  }
+
+  // Fallback: show only the text before any code fence as message
+  const msgPart = raw.split(/```/)[0]?.trim() || '¿Podés contarme un poco más?';
+  return {
+    message: msgPart,
+    filters: fallbackFilters,
+    profile_updates: {},
+    done: false,
+    suggestions: [],
+  };
 }
 
 export type { AgentOutput };

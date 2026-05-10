@@ -3,17 +3,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import { gsap } from 'gsap';
-import { Heart } from 'lucide-react';
+import { Heart, FileText } from 'lucide-react';
 
 import type { FeedCard, FeedSummary } from './data';
 import AppSidebar from '../../components/app-sidebar';
 
 const SW = 1.6;
 
-function Topbar({ count }: { count: number }) {
+function Topbar({ count, fromAI }: { count: number; fromAI: boolean }) {
   return (
     <div className="topbar">
-      <div className="crumb"><b>Encontrados</b><span style={{ color: 'var(--fg-3)', margin: '0 8px' }}>/</span>{count} propiedades</div>
+      <div className="crumb">
+        <b>Encontrados</b>
+        <span style={{ color: 'var(--fg-3)', margin: '0 8px' }}>/</span>
+        {count} {fromAI ? 'informes IA' : 'propiedades'}
+      </div>
       <div className="right">
         <div className="pill"><span className="pulse" />BOT ACTIVO · 3 búsquedas</div>
         <a href="/home" className="btn btn-ghost">Nueva búsqueda</a>
@@ -33,6 +37,8 @@ function statusContent(card: FeedCard) {
     'ayer';
 
   switch (card.statusKind) {
+    case 'ai-report':
+      return <><b style={{ color: 'var(--acc)' }}>Informe IA</b> · {timeLabel}</>;
     case 'responded-fed':
       return <><b style={{ color: 'var(--pos)' }}>Respondió {name}</b> · propuso jueves 16hs</>;
     case 'casita-wrote':
@@ -50,33 +56,32 @@ function statusContent(card: FeedCard) {
   }
 }
 
-function actionsFor(card: FeedCard) {
-  if (card.approveAction === 'approve-detail') {
-    return [
-      { label: 'Aprobar', cls: 'btn btn-warm', href: '/pending' },
-      { label: 'Ver detalle', cls: 'btn btn-ink', href: card.sourceUrl, external: true },
-    ];
-  }
-  if (card.approveAction === 'force-detail') {
-    return [
-      { label: 'Forzar contacto', cls: 'btn btn-ghost', href: '#' },
-      { label: 'Ver razón', cls: 'btn btn-ink', href: card.sourceUrl, external: true },
-    ];
-  }
-  return [
-    { label: 'Ver detalle', cls: 'btn btn-acc', href: card.sourceUrl, external: true },
-    { label: 'Ver chat', cls: 'btn btn-ink', href: '/chats' },
-  ];
-}
-
 interface FeedClientProps {
   cards: FeedCard[];
   summary: FeedSummary;
 }
 
-export default function FeedClient({ cards, summary }: FeedClientProps) {
+export default function FeedClient({ cards: initialCards, summary }: FeedClientProps) {
+  const [cards] = useState<FeedCard[]>(initialCards);
+  const [threshold, setThreshold] = useState(70);
   const [mounted, setMounted] = useState(false);
   const animatedRef = useRef(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('feedScoreThreshold');
+    if (saved !== null) setThreshold(Number(saved));
+  }, []);
+
+  function handleThresholdChange(v: number) {
+    setThreshold(v);
+    localStorage.setItem('feedScoreThreshold', String(v));
+  }
+
+  const aiFeedCards = cards.filter((c) => c.approveAction === 'feed-decide');
+  const aboveCards = aiFeedCards.filter((c) => c.score >= threshold);
+  const belowCards = aiFeedCards.filter((c) => c.score < threshold);
+  const otherCards = cards.filter((c) => c.approveAction !== 'feed-decide');
+  const orderedCards = [...otherCards, ...aboveCards, ...belowCards];
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -114,35 +119,81 @@ export default function FeedClient({ cards, summary }: FeedClientProps) {
     <div className="app">
       <AppSidebar />
       <div>
-        <Topbar count={summary.total} />
+        <Topbar count={cards.length} fromAI={summary.fromAI} />
         <main className="feed">
 
           <header className="feed-head">
             <div>
-              <div className="eyebrow"><span className="dot" />BÚSQUEDA ACTIVA · 2 amb · Palermo + Villa Crespo + Caballito</div>
-              <h1 style={{ marginTop: 18 }}><span className="acc">{summary.total}</span> propiedades<br />filtradas <span className="it">para vos</span></h1>
-              <p className="sub">De {summary.scanned} listings encontrados, Casita descartó {summary.scanned - summary.filtered} por contrafrente, expensas escondidas, fotos repetidas o requisitos imposibles. Estos quedaron.</p>
+              <div className="eyebrow">
+                <span className="dot" />
+                {summary.fromAI
+                  ? 'INFORMES IA · REVISÁ LOS QUE SUPERAN TU UMBRAL'
+                  : 'BÚSQUEDA ACTIVA · 2 amb · Palermo + Villa Crespo + Caballito'}
+              </div>
+              <h1 style={{ marginTop: 18 }}>
+                <span className="acc">{aboveCards.length || cards.length}</span> {summary.fromAI ? 'informes' : 'propiedades'}<br />
+                {summary.fromAI ? <>listos para <span className="it">revisar</span></> : <>filtradas <span className="it">para vos</span></>}
+              </h1>
+              <p className="sub">
+                {summary.fromAI
+                  ? `Casita IA generó ${cards.length} informes. ${aboveCards.length} superan el umbral de score ${threshold} y tienen informe disponible. ${belowCards.length > 0 ? `${belowCards.length} quedaron por debajo del umbral y se marcaron como descartadas.` : ''}`
+                  : `De ${summary.scanned} listings encontrados, Casita descartó ${summary.scanned - summary.filtered} por contrafrente, expensas escondidas, fotos repetidas o requisitos imposibles. Estos quedaron.`}
+              </p>
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button className="btn btn-ghost">Exportar</button>
-              <button className="btn btn-acc">Refrescar ahora <span className="arrow">↻</span></button>
+              {summary.fromAI ? (
+                <a href="/chats" className="btn btn-acc">Otra búsqueda <span className="arrow">↗</span></a>
+              ) : (
+                <>
+                  <button className="btn btn-ghost">Exportar</button>
+                  <button className="btn btn-acc">Refrescar ahora <span className="arrow">↻</span></button>
+                </>
+              )}
             </div>
           </header>
 
           <div className="filters">
             <div className="grp">
-              <span className="f-chip on">Todas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.total}</span></span>
-              <span className="f-chip">Sin contactar <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{Math.max(0, summary.total - summary.contacted - summary.discarded - summary.pending)}</span></span>
-              <span className="f-chip">Esperando respuesta <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.contacted - summary.responded}</span></span>
-              <span className="f-chip acc">Respondieron <span className="mono" style={{ marginLeft: 4 }}>{summary.responded}</span></span>
-              <span className="f-chip">Descartadas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.discarded}</span></span>
+              <span className="f-chip on">Todas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{cards.length}</span></span>
+              {!summary.fromAI && (
+                <>
+                  <span className="f-chip">Sin contactar <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{Math.max(0, summary.total - summary.contacted - summary.discarded - summary.pending)}</span></span>
+                  <span className="f-chip">Esperando respuesta <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.contacted - summary.responded}</span></span>
+                  <span className="f-chip acc">Respondieron <span className="mono" style={{ marginLeft: 4 }}>{summary.responded}</span></span>
+                  <span className="f-chip">Descartadas <span className="mono" style={{ color: 'var(--fg-3)', marginLeft: 4 }}>{summary.discarded}</span></span>
+                </>
+              )}
             </div>
             <div className="grp">
               <span className="f-chip">ArgenProp</span>
               <span className="f-chip">Zonaprop</span>
               <span className="f-chip">M. Libre</span>
             </div>
-            <div className="right">
+            <div className="right" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              {summary.fromAI && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--fg-2)', whiteSpace: 'nowrap' }}>Umbral score:</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={threshold}
+                    onChange={(e) => handleThresholdChange(Number(e.target.value))}
+                    style={{ width: 90, accentColor: 'var(--acc)', cursor: 'pointer' }}
+                  />
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 12, minWidth: 26, textAlign: 'right',
+                      color: threshold >= 70 ? 'var(--acc)' : threshold >= 50 ? 'var(--warm)' : 'var(--neg)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {threshold}
+                  </span>
+                </div>
+              )}
               <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Ordenar:</span>
               <div className="seg">
                 <button className="on">Match</button>
@@ -155,18 +206,18 @@ export default function FeedClient({ cards, summary }: FeedClientProps) {
           <div className="feed-layout">
             <div>
               <div className="meta-row">
-                <span><b>{summary.total}</b> resultados</span>
+                <span><b>{cards.length}</b> resultados</span>
                 <span style={{ color: 'var(--line-2)' }}>·</span>
                 <span>actualizado hace <b>2 min</b></span>
                 <span style={{ color: 'var(--line-2)' }}>·</span>
-                <span>3 búsquedas activas</span>
+                <span>{summary.fromAI ? 'búsqueda asistida por IA' : '3 búsquedas activas'}</span>
               </div>
 
               <div className="cards">
-                {cards.map((c) => {
-                  const acts = actionsFor(c);
+                {orderedCards.map((c) => {
+                  const isBelowThreshold = c.approveAction === 'feed-decide' && c.score < threshold;
                   return (
-                    <article key={c.id} className={`pcard${c.discarded ? ' discarded' : ''}`}>
+                    <article key={c.id} className={`pcard${c.discarded || isBelowThreshold ? ' discarded' : ''}`}>
                       <div className="img-wrap">
                         <div
                           className={`ph-img${c.imgUrl ? ' ph-img-photo' : ''}`}
@@ -192,76 +243,157 @@ export default function FeedClient({ cards, summary }: FeedClientProps) {
                         <div className="specs">
                           {c.specs.map((s, j) => <span key={j}>{s}</span>)}
                         </div>
-                        <div className={`status-row ${c.status}`}>
-                          <span className="sdot" />
-                          <span>{statusContent(c)}</span>
-                        </div>
+                        {c.summary && (
+                          <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>
+                            {c.summary}
+                          </p>
+                        )}
+                        {(c.pros && c.pros.length > 0) || (c.cons && c.cons.length > 0) ? (
+                          <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11.5 }}>
+                            {c.pros && c.pros.length > 0 && (
+                              <div style={{ flex: 1 }}>
+                                <div style={{ color: 'var(--pos)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A favor</div>
+                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
+                                  {c.pros.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {c.cons && c.cons.length > 0 && (
+                              <div style={{ flex: 1 }}>
+                                <div style={{ color: 'var(--warm)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A tener en cuenta</div>
+                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
+                                  {c.cons.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {isBelowThreshold ? (
+                          <div className="status-row discarded">
+                            <span className="sdot" />
+                            <span>
+                              <b style={{ color: 'var(--neg)' }}>Descartado</b>
+                              {' · '}score {c.score} bajo umbral {threshold}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className={`status-row ${c.status}`}>
+                            <span className="sdot" />
+                            <span>{statusContent(c)}</span>
+                          </div>
+                        )}
+
                         <div className="card-actions">
-                          {acts.map((a, j) => (
-                            <a
-                              key={j}
-                              href={a.href}
-                              className={a.cls}
-                              {...(a.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                            >
-                              {a.label}
-                            </a>
-                          ))}
+                          {c.approveAction === 'feed-decide' ? (
+                            isBelowThreshold ? null : (
+                              <a
+                                href={`/informe/${c.feedRowId}`}
+                                className="btn btn-acc"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <FileText size={13} strokeWidth={SW} /> Ver informe
+                              </a>
+                            )
+                          ) : c.approveAction === 'approve-detail' ? (
+                            <>
+                              <a href="/pending" className="btn btn-warm">Aprobar</a>
+                              <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver detalle</a>
+                            </>
+                          ) : c.approveAction === 'force-detail' ? (
+                            <>
+                              <a href="#" className="btn btn-ghost">Forzar contacto</a>
+                              <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver razón</a>
+                            </>
+                          ) : (
+                            <>
+                              <a href={c.sourceUrl} className="btn btn-acc" target="_blank" rel="noopener noreferrer">Ver detalle</a>
+                              <a href="/chats" className="btn btn-ink">Ver chat</a>
+                            </>
+                          )}
                         </div>
                       </div>
                     </article>
                   );
                 })}
+                {cards.length === 0 && (
+                  <div style={{ gridColumn: '1 / -1', padding: '60px 20px', textAlign: 'center', color: 'var(--fg-3)', fontSize: 14, lineHeight: 1.5 }}>
+                    No hay propiedades para mostrar. Pedile una nueva búsqueda a Casita IA.
+                    <div style={{ marginTop: 16 }}>
+                      <a href="/chats" className="btn btn-acc">Ir a Casita IA</a>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div style={{ marginTop: 28, display: 'flex', justifyContent: 'center' }}>
-                <button className="btn btn-ghost">Cargar 15 más</button>
-              </div>
+              {!summary.fromAI && cards.length > 0 && (
+                <div style={{ marginTop: 28, display: 'flex', justifyContent: 'center' }}>
+                  <button className="btn btn-ghost">Cargar 15 más</button>
+                </div>
+              )}
             </div>
 
             <aside className="rail">
               <div className="rcard">
-                <h4>Resumen de la búsqueda</h4>
-                {[
-                  { k: 'Listings escaneados', v: String(summary.scanned) },
-                  { k: 'Pasaron filtro IA',   v: String(summary.filtered), cls: 'acc' },
-                  { k: 'Contactados',          v: String(summary.contacted) },
-                  { k: 'Respondieron',         v: String(summary.responded), cls: 'acc' },
-                  { k: 'Pendientes tu OK',     v: String(summary.pending),   cls: 'warm' },
-                  { k: 'Descartados',          v: String(summary.discarded) },
-                ].map((s, i) => (
-                  <div key={i} className="rstat">
-                    <span className="k">{s.k}</span>
-                    <span className={`v${s.cls ? ` ${s.cls}` : ''}`}>{s.v}</span>
-                  </div>
-                ))}
+                <h4>{summary.fromAI ? 'Resumen del informe' : 'Resumen de la búsqueda'}</h4>
+                {summary.fromAI ? (
+                  <>
+                    <div className="rstat"><span className="k">Total informes</span><span className="v">{summary.total}</span></div>
+                    <div className="rstat"><span className="k">Sobre umbral ({threshold}+)</span><span className="v acc">{aboveCards.length}</span></div>
+                    <div className="rstat"><span className="k">Descartados</span><span className="v" style={{ color: 'var(--neg)' }}>{belowCards.length}</span></div>
+                    <div className="rstat">
+                      <span className="k">Score promedio</span>
+                      <span className="v">{cards.length > 0 ? Math.round(cards.reduce((s, c) => s + c.score, 0) / cards.length) : 0}</span>
+                    </div>
+                  </>
+                ) : (
+                  [
+                    { k: 'Listings escaneados', v: String(summary.scanned) },
+                    { k: 'Pasaron filtro IA',   v: String(summary.filtered), cls: 'acc' },
+                    { k: 'Contactados',          v: String(summary.contacted) },
+                    { k: 'Respondieron',         v: String(summary.responded), cls: 'acc' },
+                    { k: 'Pendientes tu OK',     v: String(summary.pending),   cls: 'warm' },
+                    { k: 'Descartados',          v: String(summary.discarded) },
+                  ].map((s, i) => (
+                    <div key={i} className="rstat">
+                      <span className="k">{s.k}</span>
+                      <span className={`v${s.cls ? ` ${s.cls}` : ''}`}>{s.v}</span>
+                    </div>
+                  ))
+                )}
               </div>
 
-              <div className="rcard">
-                <h4>Por qué se descartaron</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-                  {[
-                    [154, 'Contrafrente o sin luz natural'],
-                    [112, 'Expensas escondidas >30%'],
-                    [68,  'Garante propietario obligatorio'],
-                    [31,  'Fotos repetidas / dudosas'],
-                    [23,  '"Ideal estudiante"'],
-                  ].map(([n, label], i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <span className="tag bad" style={{ marginTop: 2 }}>{n}</span>
-                      <span style={{ color: 'var(--fg-1)' }}>{label}</span>
-                    </div>
-                  ))}
+              {!summary.fromAI && (
+                <div className="rcard">
+                  <h4>Por qué se descartaron</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                    {[
+                      [154, 'Contrafrente o sin luz natural'],
+                      [112, 'Expensas escondidas >30%'],
+                      [68,  'Garante propietario obligatorio'],
+                      [31,  'Fotos repetidas / dudosas'],
+                      [23,  '"Ideal estudiante"'],
+                    ].map(([n, label], i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <span className="tag bad" style={{ marginTop: 2 }}>{n}</span>
+                        <span style={{ color: 'var(--fg-1)' }}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="rcard" style={{ background: 'oklch(0.92 0.205 116 / 0.06)', borderColor: 'oklch(0.92 0.205 116 / 0.3)' }}>
-                <h4 style={{ color: 'var(--acc)' }}>Casita está trabajando</h4>
+                <h4 style={{ color: 'var(--acc)' }}>
+                  {summary.fromAI ? '¿Cómo sigue?' : 'Casita está trabajando'}
+                </h4>
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.5 }}>
-                  3 mensajes en cola. Próximo refresco en <span className="mono">04:12</span>.
+                  {summary.fromAI
+                    ? 'Los informes que superan tu umbral de score están disponibles para revisar. Ajustá el umbral en los filtros para ver más o menos resultados.'
+                    : <>3 mensajes en cola. Próximo refresco en <span className="mono">04:12</span>.</>}
                 </p>
                 <a href="/chats" className="btn btn-acc" style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}>
-                  Ver conversaciones
+                  {summary.fromAI ? 'Volver a Casita IA' : 'Ver conversaciones'}
                 </a>
               </div>
             </aside>
