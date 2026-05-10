@@ -11,8 +11,12 @@ export const EnvSchema = z.object({
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SUPABASE_JWT_SECRET: z.string().min(1),
+  SUPABASE_PROPERTIES_TABLE: z.string().min(1).default('propiedades'),
 
   CORS_ORIGIN: z.string().min(1),
+
+  ANTHROPIC_API_KEY: z.string().min(1),
+  VOYAGE_API_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

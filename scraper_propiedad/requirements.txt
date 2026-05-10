@@ -1,0 +1,2 @@
+cloudscraper==1.2.64
+certifi>=2025.1.31

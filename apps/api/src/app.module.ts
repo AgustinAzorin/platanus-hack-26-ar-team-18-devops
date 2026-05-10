@@ -7,9 +7,20 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { AnalysisModule } from './modules/analysis/analysis.module';
+import { PropertiesModule } from './modules/properties/properties.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, UsersModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    SupabaseModule,
+    UsersModule,
+    PropertiesModule,
+    AnalysisModule,
+    SearchModule,
+  ],
   providers: [
     {
       provide: APP_PIPE,

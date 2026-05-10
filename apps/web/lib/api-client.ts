@@ -1,5 +1,15 @@
-import { UpdateUserSchema, UserSchema } from '@repo/types';
-import type { UpdateUserInput, User } from '@repo/types';
+import {
+  AnalyzePropertyResponseSchema,
+  NeighborhoodsResponseSchema,
+  UpdateUserSchema,
+  UserSchema,
+} from '@repo/types';
+import type {
+  AnalyzePropertyResponse,
+  NeighborhoodsResponse,
+  UpdateUserInput,
+  User,
+} from '@repo/types';
 import type { z } from 'zod';
 
 import { env } from './env';
@@ -11,10 +21,10 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
+async function request<S extends z.ZodTypeAny>(
   path: string,
-  init: RequestInit & { token?: string; schema: z.ZodType<T> },
-): Promise<T> {
+  init: RequestInit & { token?: string; schema: S },
+): Promise<z.output<S>> {
   const { token, schema, ...rest } = init;
 
   const headers = new Headers(rest.headers);
@@ -48,6 +58,21 @@ export const apiClient = {
         token,
         body: JSON.stringify(UpdateUserSchema.parse(input)),
         schema: UserSchema,
+      });
+    },
+  },
+  analysis: {
+    neighborhoods(): Promise<NeighborhoodsResponse> {
+      return request('/analysis/neighborhoods', {
+        method: 'GET',
+        schema: NeighborhoodsResponseSchema,
+      });
+    },
+    analyze(neighborhood: string): Promise<AnalyzePropertyResponse> {
+      return request('/analysis/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ neighborhood }),
+        schema: AnalyzePropertyResponseSchema,
       });
     },
   },

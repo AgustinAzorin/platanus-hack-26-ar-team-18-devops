@@ -1,0 +1,11 @@
+
+*.pyc
+*.csv
+*.xls
+*.ipynb
+*.html
+.vscode/settings.json
+.mcp.json
+.venv/
+.env
+.DS_Store
