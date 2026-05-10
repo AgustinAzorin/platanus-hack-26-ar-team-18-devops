@@ -177,6 +177,14 @@ main.search {
   filter: brightness(1.1);
 }
 
+/* Terminal cursor blink */
+.cursor-blink {
+  animation: cursor-blink 1s steps(2, start) infinite;
+}
+@keyframes cursor-blink {
+  to { visibility: hidden; }
+}
+
 /* Quick-reply chips below the latest assistant message */
 .quick-replies {
   display: flex;

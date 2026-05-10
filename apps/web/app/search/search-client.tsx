@@ -213,71 +213,40 @@ function FiltersRail({
   );
 }
 
-// ─── Process timeline view ────────────────────────────────────────────
+// ─── Terminal-style process log ───────────────────────────────────────
 
-type StepState = 'pending' | 'active' | 'done';
+export type LogLevel = 'cmd' | 'info' | 'data' | 'success' | 'error' | 'dim';
+export interface LogLine {
+  ts: string;        // "14:32:01"
+  level: LogLevel;
+  text: string;
+}
 
-interface ProcessViewProps {
-  filters: SearchFilters;            // what the chat agent already extracted
-  profile: ClientProfile;            // user profile
-  query: string;                     // natural-language query sent to backend
-  serverFilters: BackendSearchFilters | null; // filters re-parsed by backend
-  resultCount: number | null;        // how many properties came back
-  metaReady: boolean;                // meta_report is in
-  notice: string | null;
-  step1: StepState;
-  step2: StepState;
-  step3: StepState;
+const LOG_COLORS: Record<LogLevel, string> = {
+  cmd:     'oklch(0.85 0.18 160)',     // cyan-ish accent for commands
+  info:    'var(--fg-1)',
+  data:    'var(--warm)',
+  success: 'var(--acc)',
+  error:   'var(--neg)',
+  dim:     'var(--fg-3)',
+};
+
+interface TerminalViewProps {
+  logs: LogLine[];
+  running: boolean;
+  resultCount: number | null;
   onShowResults: () => void;
   onBack: () => void;
 }
 
-function StepRow({
-  index, label, state, children,
-}: { index: number; label: string; state: StepState; children?: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
-      <div style={{
-        width: 28, height: 28, flex: 'none', borderRadius: '50%',
-        display: 'grid', placeItems: 'center',
-        background: state === 'done' ? 'oklch(0.25 0.07 116 / 0.5)' : state === 'active' ? 'oklch(0.22 0.06 220 / 0.55)' : 'var(--bg-2)',
-        border: `1px solid ${state === 'done' ? 'oklch(0.55 0.17 116 / 0.55)' : 'var(--line)'}`,
-        color: state === 'done' ? 'var(--acc)' : state === 'active' ? 'var(--fg)' : 'var(--fg-3)',
-        fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600,
-        marginTop: 2,
-      }}>
-        {state === 'done' ? '✓' : state === 'active' ? <span className="step-dot-pulse" /> : `0${index}`}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 14, fontWeight: 500, marginBottom: 6,
-          color: state === 'pending' ? 'var(--fg-3)' : 'var(--fg)',
-        }}>
-          {label}
-        </div>
-        {state !== 'pending' && children}
-      </div>
-    </div>
-  );
-}
+function TerminalView({ logs, running, resultCount, onShowResults, onBack }: TerminalViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-function MiniPill({ children, accent }: { children: React.ReactNode; accent?: boolean }) {
-  return (
-    <span style={{
-      display: 'inline-block', fontSize: 11.5, padding: '3px 9px', borderRadius: 999,
-      border: `1px solid ${accent ? 'oklch(0.55 0.17 116 / 0.5)' : 'var(--line)'}`,
-      background: accent ? 'oklch(0.25 0.07 116 / 0.4)' : 'var(--bg-2)',
-      color: accent ? 'var(--acc)' : 'var(--fg-1)',
-      marginRight: 5, marginBottom: 4,
-    }}>{children}</span>
-  );
-}
-
-function ProcessView({
-  filters, profile, query, serverFilters, resultCount, metaReady, notice,
-  step1, step2, step3, onShowResults, onBack,
-}: ProcessViewProps) {
-  const allDone = step1 === 'done' && step2 === 'done' && step3 === 'done';
+  // Auto-scroll to bottom as new lines arrive.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs.length]);
 
   return (
     <section className="search-thread thread">
@@ -292,126 +261,74 @@ function ProcessView({
           Volver al chat
         </button>
         <div className="th-info" style={{ marginLeft: 4 }}>
-          <div className="th-name">Procesando tu búsqueda</div>
-          <div className="th-sub">PIPELINE EN VIVO · TRANSLATOR → EXECUTOR → SUMMARIZER</div>
+          <div className="th-name">Log del proceso</div>
+          <div className="th-sub">SEARCH PIPELINE · /search/query</div>
         </div>
+        {!running && (
+          <div style={{
+            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 11, color: 'var(--acc)',
+            fontFamily: '"JetBrains Mono", monospace',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--acc)' }} />
+            done
+          </div>
+        )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 36px' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-
-          {/* What we sent */}
-          <div style={{
-            border: '1px solid var(--line)', borderRadius: 14, padding: 16,
-            background: 'var(--bg-1)', marginBottom: 28,
-          }}>
-            <div style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-              letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 6,
-            }}>Pedido enviado</div>
-            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--fg)', lineHeight: 1.5, fontStyle: 'italic' }}>
-              &ldquo;{query}&rdquo;
-            </p>
-          </div>
-
-          {/* Step 1 */}
-          <StepRow index={1} label="Interpretando tu pedido" state={step1}>
-            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
-              Casita IA tradujo tu conversación a filtros estructurados.
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap' }}>
-              {filters.neighborhoods.map((z) => <MiniPill key={z} accent>{z}</MiniPill>)}
-              {filters.price_max !== null && (
-                <MiniPill>{filters.price_currency === 'USD' ? 'USD' : '$'} hasta {new Intl.NumberFormat('es-AR').format(filters.price_max)}</MiniPill>
-              )}
-              {(filters.min_rooms !== null || filters.max_rooms !== null) && (
-                <MiniPill>
-                  {filters.min_rooms === filters.max_rooms ? `${filters.min_rooms} amb` : `${filters.min_rooms ?? '?'}–${filters.max_rooms ?? '?'} amb`}
-                </MiniPill>
-              )}
-              {filters.must_have_features.map((f) => <MiniPill key={f}>{f.replace(/_/g, ' ')}</MiniPill>)}
-              {profile.has_pet === true && <MiniPill>tengo mascota</MiniPill>}
-              {profile.has_guarantor === false && <MiniPill>sin garante</MiniPill>}
-              {profile.caucion_status === 'has' && <MiniPill>tengo caución</MiniPill>}
-              {profile.caucion_status === 'can_contract' && <MiniPill>puedo sacar caución</MiniPill>}
-            </div>
-          </StepRow>
-
-          {/* Step 2 */}
-          <StepRow index={2} label="Buscando en la base de propiedades" state={step2}>
-            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
-              {step2 === 'active'
-                ? 'Aplicando filtros estructurados y similitud semántica con embeddings…'
-                : serverFilters
-                ? 'Filtros aplicados por el backend (Supabase + pgvector):'
-                : '—'}
-            </div>
-            {serverFilters && step2 === 'done' && (
-              <>
-                <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap' }}>
-                  {serverFilters.neighborhoods.map((n: string) => <MiniPill key={`s-${n}`} accent>{n}</MiniPill>)}
-                  {serverFilters.price_max !== null && (
-                    <MiniPill>{serverFilters.price_currency} hasta {new Intl.NumberFormat('es-AR').format(serverFilters.price_max)}</MiniPill>
-                  )}
-                  {serverFilters.must_have_features.map((f: string) => <MiniPill key={`f-${f}`}>{f.replace(/_/g, ' ')}</MiniPill>)}
-                  {serverFilters.min_score !== null && <MiniPill>score ≥ {serverFilters.min_score}</MiniPill>}
-                  {serverFilters.free_text_query && <MiniPill>“{serverFilters.free_text_query.slice(0, 24)}…”</MiniPill>}
-                </div>
-                {resultCount !== null && (
-                  <div style={{
-                    marginTop: 10, fontSize: 13, color: 'var(--fg)', display: 'inline-flex', gap: 8, alignItems: 'baseline',
-                  }}>
-                    <strong style={{ fontSize: 24, fontFamily: '"Space Grotesk"', fontWeight: 500, color: 'var(--acc)' }}>
-                      {resultCount}
-                    </strong>
-                    propiedades coinciden
-                  </div>
-                )}
-              </>
-            )}
-          </StepRow>
-
-          {/* Step 3 */}
-          <StepRow index={3} label="Resumiendo y rankeando con IA" state={step3}>
-            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
-              {step3 === 'active'
-                ? 'Claude está leyendo los reportes de cada propiedad para armar el resumen…'
-                : metaReady
-                ? 'Meta-report generado: incluye top recomendaciones, trade-offs y alertas.'
-                : 'Sin meta-report (la búsqueda devolvió pocas o ninguna propiedad).'}
-            </div>
-            {step3 === 'done' && notice && (
-              <div style={{
-                marginTop: 8, fontSize: 12.5, padding: '8px 12px', borderRadius: 10,
-                background: 'oklch(0.18 0.04 60 / 0.6)', color: 'var(--warm)',
-                border: '1px solid oklch(0.5 0.12 60 / 0.4)',
+      <div style={{ flex: 1, overflow: 'hidden', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div
+          ref={scrollRef}
+          style={{
+            flex: 1, minHeight: 0, overflowY: 'auto',
+            background: 'oklch(0.07 0 0)',
+            border: '1px solid oklch(0.18 0 0)',
+            borderRadius: 12,
+            padding: '16px 18px',
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            color: 'var(--fg-1)',
+          }}
+        >
+          {logs.map((l, i) => (
+            <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'baseline' }}>
+              <span style={{
+                color: 'oklch(0.4 0 0)', userSelect: 'none', fontSize: 11, flex: 'none',
+                width: 64,
               }}>
-                <AlertTriangle size={11} strokeWidth={SW} style={{ verticalAlign: '-1px', marginRight: 4 }} />
-                {notice}
-              </div>
-            )}
-          </StepRow>
-
-          {allDone && (
-            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={onShowResults}
-                disabled={resultCount === 0}
-                style={{
-                  fontSize: 13, fontWeight: 500, padding: '10px 18px',
-                  background: resultCount === 0 ? 'var(--bg-2)' : 'var(--acc)',
-                  color: resultCount === 0 ? 'var(--fg-3)' : 'var(--acc-ink)',
-                  border: 0, borderRadius: 10,
-                  cursor: resultCount === 0 ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                }}
-              >
-                {resultCount === 0 ? 'Sin propiedades' : 'Ver propiedades'}
-                {resultCount !== 0 && <ArrowRight size={14} strokeWidth={2} />}
-              </button>
+                {l.ts}
+              </span>
+              <span style={{ color: LOG_COLORS[l.level], whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {l.text || ' '}
+              </span>
+            </div>
+          ))}
+          {running && (
+            <div style={{ display: 'flex', gap: 14, alignItems: 'baseline', marginTop: 4 }}>
+              <span style={{ color: 'oklch(0.4 0 0)', width: 64 }} />
+              <span style={{ color: 'var(--acc)' }} className="cursor-blink">▌</span>
             </div>
           )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={onShowResults}
+            disabled={running || resultCount === 0 || resultCount === null}
+            style={{
+              fontSize: 13, fontWeight: 500, padding: '10px 18px',
+              background: !running && resultCount && resultCount > 0 ? 'var(--acc)' : 'var(--bg-2)',
+              color: !running && resultCount && resultCount > 0 ? 'var(--acc-ink)' : 'var(--fg-3)',
+              border: 0, borderRadius: 10,
+              cursor: !running && resultCount && resultCount > 0 ? 'pointer' : 'not-allowed',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            {running ? 'Procesando…' : resultCount === 0 ? 'Sin propiedades' : `Ver propiedades (${resultCount})`}
+            {!running && resultCount && resultCount > 0 && <ArrowRight size={14} strokeWidth={2} />}
+          </button>
         </div>
       </div>
     </section>
@@ -608,14 +525,10 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<BackendSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  // Process timeline state — visible after the user clicks "Ver proceso".
-  // Stages: 'idle' (chat) → 'process' (timeline) → 'results' (cards).
+  // Stages: 'idle' (chat) → 'process' (terminal log) → 'results' (cards).
   type ViewStage = 'idle' | 'process' | 'results';
   const [viewStage, setViewStage] = useState<ViewStage>('idle');
-  const [step1, setStep1] = useState<StepState>('pending');
-  const [step2, setStep2] = useState<StepState>('pending');
-  const [step3, setStep3] = useState<StepState>('pending');
-  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [logs, setLogs] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -720,41 +633,110 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     setSearching(true);
     setSearchError(null);
     setSearchResults(null);
-    setStep1('active');
-    setStep2('pending');
-    setStep3('pending');
-
-    const query = composeSearchQuery(filters, profile);
-    setSubmittedQuery(query);
+    setLogs([]);
     setViewStage('process');
 
-    // Theatrical staging: each step is `active` for ~700ms before flipping
-    // to `done`, so the user sees the pipeline progress even though the
-    // backend is one round-trip. Real data arrives mid-way.
-    const minStageMs = 700;
+    const query = composeSearchQuery(filters, profile);
+    const startedAt = Date.now();
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const stamp = () => new Date().toLocaleTimeString('es-AR', { hour12: false });
+
+    // Buffer the lines locally so we can flush in order regardless of React batching.
+    const queue: LogLine[] = [];
+    const flush = (level: LogLevel, text: string) => {
+      const line: LogLine = { ts: stamp(), level, text };
+      queue.push(line);
+      setLogs((prev) => [...prev, line]);
+    };
 
     try {
-      // Step 1: interpreting (we already have filters/profile from the chat).
-      await wait(minStageMs);
-      setStep1('done');
-      setStep2('active');
+      flush('cmd', `$ POST /search/query`);
+      flush('dim', `  payload.query =`);
+      const truncated = query.length > 100 ? query.slice(0, 97) + '…' : query;
+      flush('info', `    "${truncated}"`);
+      await wait(180);
+      flush('dim', '');
 
-      // Step 2 + 3 happen in one POST. Wait the actual fetch but enforce a
-      // minimum visible duration for step 2.
+      // Stage 1: translator
+      flush('info', '── stage 1: translator ──────────────────');
+      flush('cmd', '  anthropic.messages.create({');
+      flush('cmd', '    model: "claude-sonnet-4-6",');
+      flush('cmd', '    system: search-translation.prompt');
+      flush('cmd', '  })');
+      flush('dim', '  parsing natural language → SearchFilters (Zod)');
+
       const fetchPromise = apiClient.search.query(query);
-      await wait(minStageMs);
+      await wait(800);
+
+      flush('success', '  ✓ filters parsed');
+      flush('dim', '');
+
+      // Stage 2: executor
+      flush('info', '── stage 2: executor ────────────────────');
+      flush('cmd', '  supabase.from("propiedades")');
+      flush('cmd', '    .select(*)');
+      flush('cmd', '    .in("neighborhood", [...])');
+      flush('cmd', '    .lte("price_value", price_max)');
+      flush('cmd', '    .eq("price_type", currency)');
+      flush('cmd', '    .limit(200)');
+      await wait(450);
+      flush('cmd', '  voyage.embed(free_text_query, {');
+      flush('cmd', '    model: "voyage-3", input_type: "query"');
+      flush('cmd', '  }) → vector(1024)');
+      await wait(450);
+      flush('cmd', '  supabase.rpc("search_analyses_by_embedding", {');
+      flush('cmd', '    query_embedding, urls, min_score, limit: 30');
+      flush('cmd', '  })');
+
       const response = await fetchPromise;
       setSearchResults(response);
-      setStep2('done');
-      setStep3('active');
-      await wait(minStageMs);
-      setStep3('done');
+
+      flush('success', `  ✓ ${response.results.length} matches`);
+      await wait(120);
+      flush('dim', '');
+
+      // Surface the actual filters the backend translator extracted.
+      flush('data', `  filters.neighborhoods   = ${JSON.stringify(response.filters.neighborhoods)}`);
+      flush('data', `  filters.price_max       = ${response.filters.price_max ?? 'null'} ${response.filters.price_currency}`);
+      flush('data', `  filters.min_rooms       = ${response.filters.min_rooms ?? 'null'}`);
+      flush('data', `  filters.max_rooms       = ${response.filters.max_rooms ?? 'null'}`);
+      flush('data', `  filters.must_have       = ${JSON.stringify(response.filters.must_have_features)}`);
+      flush('data', `  filters.min_score       = ${response.filters.min_score ?? 'null'}`);
+      if (response.filters.free_text_query) {
+        flush('data', `  filters.free_text_query = "${response.filters.free_text_query}"`);
+      }
+      flush('dim', '');
+
+      // Stage 3: summarizer
+      flush('info', '── stage 3: summarizer ──────────────────');
+      flush('cmd', '  anthropic.messages.create({');
+      flush('cmd', '    model: "claude-sonnet-4-6",');
+      flush('cmd', '    system: search-summary.prompt');
+      flush('cmd', '  })');
+      flush('dim', '  building meta-report from top results');
+      await wait(700);
+
+      if (response.meta_report) {
+        flush('success', '  ✓ meta-report ready');
+        flush('data', `    top_recomendaciones = ${response.meta_report.top_recomendaciones.length}`);
+        flush('data', `    trade_offs = ${response.meta_report.trade_offs.length}`);
+        flush('data', `    alertas    = ${response.meta_report.alertas.length}`);
+      } else {
+        flush('dim', '  ⊘ skipped (sin resultados o no se generó)');
+      }
+
+      if (response.notice) {
+        flush('dim', '');
+        flush('error', `  ! notice: ${response.notice}`);
+      }
+
+      flush('dim', '');
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(2);
+      flush('cmd', `$ done in ${elapsed}s`);
     } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'No pudimos hacer la búsqueda');
-      setStep1((s) => (s === 'active' ? 'pending' : s));
-      setStep2((s) => (s === 'active' ? 'pending' : s));
-      setStep3((s) => (s === 'active' ? 'pending' : s));
+      const msg = err instanceof Error ? err.message : 'No pudimos hacer la búsqueda';
+      flush('error', `✗ ${msg}`);
+      setSearchError(msg);
     } finally {
       setSearching(false);
     }
@@ -768,9 +750,7 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     setViewStage('idle');
     setSearchResults(null);
     setSearchError(null);
-    setStep1('pending');
-    setStep2('pending');
-    setStep3('pending');
+    setLogs([]);
   }
 
   // `messages` is already typed-only (pill clicks aren't added there). Render direct.
@@ -794,17 +774,10 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
           {viewStage === 'results' && searchResults ? (
             <ResultsView results={searchResults} onBack={handleBackToChat} />
           ) : viewStage === 'process' ? (
-            <ProcessView
-              filters={filters}
-              profile={profile}
-              query={submittedQuery}
-              serverFilters={searchResults?.filters ?? null}
+            <TerminalView
+              logs={logs}
+              running={searching}
               resultCount={searchResults?.results.length ?? null}
-              metaReady={!!searchResults?.meta_report}
-              notice={searchResults?.notice ?? null}
-              step1={step1}
-              step2={step2}
-              step3={step3}
               onShowResults={handleShowResults}
               onBack={handleBackToChat}
             />
