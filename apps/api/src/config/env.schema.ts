@@ -13,7 +13,10 @@ export const EnvSchema = z.object({
   SUPABASE_JWT_SECRET: z.string().min(1),
   SUPABASE_PROPERTIES_TABLE: z.string().min(1).default('propiedades'),
 
-  CORS_ORIGIN: z.string().min(1),
+  CORS_ORIGIN: z
+    .string()
+    .min(1)
+    .transform((val) => val.split(',').map((s) => s.trim())),
 
   ANTHROPIC_API_KEY: z.string().min(1),
   VOYAGE_API_KEY: z.string().min(1),

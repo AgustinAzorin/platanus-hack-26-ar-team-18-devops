@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 import type { Env } from '../config/env.schema';
 
@@ -31,6 +32,8 @@ export class SupabaseService {
         autoRefreshToken: false,
         persistSession: false,
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      realtime: { transport: ws as any },
     });
 
     this.anon = createClient(url, anonKey, {
@@ -38,6 +41,8 @@ export class SupabaseService {
         autoRefreshToken: false,
         persistSession: false,
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      realtime: { transport: ws as any },
     });
 
     this.logger.log('Supabase clients initialized (admin + anon)');

@@ -24,17 +24,23 @@ RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 # Lockfile + manifest layer (cached)
 COPY --from=pruner /repo/out/json/ .
 COPY --from=pruner /repo/out/pnpm-lock.yaml ./pnpm-lock.yaml
+# Ensure node-linker=hoisted from .npmrc is respected during install
+COPY --from=pruner /repo/.npmrc ./.npmrc
 RUN pnpm install --frozen-lockfile
 
 # Source layer + Prisma generate + build
 COPY --from=pruner /repo/out/full/ .
+RUN pnpm --filter @repo/types run build
 RUN pnpm --filter @repo/database run db:generate
+RUN pnpm --filter @repo/database run build
 RUN pnpm --filter api run build
 
 # ---------- 3. Runtime image ----------
 FROM node:${NODE_VERSION}-alpine AS runner
 RUN apk add --no-cache libc6-compat openssl tini
-WORKDIR /app
+# Keep WORKDIR at /repo so pnpm hoisted symlinks (node_modules/@repo/*)
+# continue to resolve correctly — they were created relative to /repo.
+WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 
 ENV NODE_ENV=production
@@ -46,8 +52,14 @@ USER nestjs
 COPY --from=installer --chown=nestjs:nodejs /repo/node_modules ./node_modules
 COPY --from=installer --chown=nestjs:nodejs /repo/apps/api/dist ./apps/api/dist
 COPY --from=installer --chown=nestjs:nodejs /repo/apps/api/package.json ./apps/api/package.json
-COPY --from=installer --chown=nestjs:nodejs /repo/packages ./packages
 COPY --from=installer --chown=nestjs:nodejs /repo/package.json ./package.json
+
+# Workspace packages arrive as broken symlinks after COPY --from; overwrite
+# them with the compiled dist so Node can resolve @repo/* without symlinks.
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/database/dist ./node_modules/@repo/database/dist
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/database/package.json ./node_modules/@repo/database/package.json
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/types/dist ./node_modules/@repo/types/dist
+COPY --from=installer --chown=nestjs:nodejs /repo/packages/types/package.json ./node_modules/@repo/types/package.json
 
 EXPOSE 4000
 ENTRYPOINT ["/sbin/tini", "--"]
