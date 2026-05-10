@@ -148,6 +148,8 @@ interface PropQueryBuilder {
   select(cols: string): PropQueryBuilder;
   not(col: string, op: string, val: unknown): PropQueryBuilder;
   in(col: string, vals: unknown[]): PropQueryBuilder;
+  or(filter: string): PropQueryBuilder;
+  ilike(col: string, pattern: string): PropQueryBuilder;
   lte(col: string, val: unknown): PropQueryBuilder;
   gte(col: string, val: unknown): PropQueryBuilder;
   eq(col: string, val: unknown): PropQueryBuilder;
@@ -165,10 +167,21 @@ async function queryProperties(filters: SearchFilters): Promise<PropiedadRow[]> 
       .select(cols)
       .not('url', 'is', null);
 
-    if (filters.neighborhoods.length > 0) q = q.in('neighborhood', filters.neighborhoods);
+    if (filters.neighborhoods.length > 0) {
+      // Use ilike for each neighborhood so "Palermo" matches "Palermo Soho", "Palermo Hollywood", etc.
+      const orFilter = filters.neighborhoods
+        .map((n) => `neighborhood.ilike.%${n}%`)
+        .join(',');
+      q = q.or(orFilter);
+    }
     if (filters.price_max !== null) {
       q = q.lte('price_value', filters.price_max);
-      if (filters.price_currency) q = q.eq('price_type', filters.price_currency);
+      // Only filter by price_type for USD; ARS properties may be stored as "$" or "ARS"
+      if (filters.price_currency === 'USD') {
+        q = q.eq('price_type', 'USD');
+      } else if (filters.price_currency === 'ARS') {
+        q = q.not('price_type', 'eq', 'USD');
+      }
     }
     if (filters.min_rooms !== null) q = q.gte('rooms', filters.min_rooms);
     if (filters.max_rooms !== null) q = q.lte('rooms', filters.max_rooms);
