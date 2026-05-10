@@ -1,18 +1,17 @@
 import { notFound } from 'next/navigation';
+import type { AnalysisReport } from '@repo/types';
 
 import { getCurrentClientUserId } from '../../../lib/search/profile';
 import { createServiceClient } from '../../../lib/supabase/service';
 
-export const dynamic = 'force-dynamic';
-
 import InformeClient from './informe-client';
+
+export const dynamic = 'force-dynamic';
 
 interface FeedResultRow {
   id: string;
   posting_id: string;
   match_score: number | null;
-  report_summary: string | null;
-  report_highlights: { pros?: string[]; cons?: string[] } | null;
   created_at: string;
 }
 
@@ -35,6 +34,13 @@ interface PropiedadRow {
   description_summary: string | null;
 }
 
+interface AnalysisRow {
+  id: string;
+  url: string;
+  report: AnalysisReport;
+  created_at: string;
+}
+
 export default async function InformePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createServiceClient();
@@ -42,7 +48,7 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
 
   const { data: feedRow, error: feedError } = await supabase
     .from('feed_results')
-    .select('id, posting_id, match_score, report_summary, report_highlights, created_at')
+    .select('id, posting_id, match_score, created_at')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -63,20 +69,38 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
 
   const prop = propRow as PropiedadRow;
 
+  // Build full zonaprop URL
   const zonapropUrl = prop.url
     ? prop.url.startsWith('http')
       ? prop.url
       : `https://www.zonaprop.com.ar${prop.url}`
     : null;
 
+  // Search for analysis in analyses table by URL
+  let analysis: AnalysisReport | null = null;
+  let analysisCreatedAt: string | null = null;
+
+  if (zonapropUrl) {
+    const { data: analysisRow } = await supabase
+      .from('analyses')
+      .select('id, report, created_at')
+      .eq('url', zonapropUrl)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (analysisRow) {
+      analysis = (analysisRow as AnalysisRow).report;
+      analysisCreatedAt = (analysisRow as AnalysisRow).created_at;
+    }
+  }
+
   return (
     <InformeClient
       feedRowId={row.id}
-      score={row.match_score ?? 0}
-      summary={row.report_summary ?? null}
-      pros={(row.report_highlights?.pros ?? []).slice(0, 5)}
-      cons={(row.report_highlights?.cons ?? []).slice(0, 5)}
-      createdAt={row.created_at}
+      feedScore={row.match_score ?? 0}
+      analysisReport={analysis}
+      analysisCreatedAt={analysisCreatedAt}
       property={{
         posting_id: prop.posting_id,
         address: prop.address,

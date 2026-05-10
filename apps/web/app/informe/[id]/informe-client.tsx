@@ -1,6 +1,8 @@
 'use client';
 
-import { ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, ExternalLink, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
+import type { AnalysisReport } from '@repo/types';
 
 import AppSidebar from '../../../components/app-sidebar';
 
@@ -26,11 +28,9 @@ interface PropertyInfo {
 
 interface InformeClientProps {
   feedRowId: string;
-  score: number;
-  summary: string | null;
-  pros: string[];
-  cons: string[];
-  createdAt: string;
+  feedScore: number;
+  analysisReport: AnalysisReport | null;
+  analysisCreatedAt: string | null;
   property: PropertyInfo;
 }
 
@@ -58,48 +58,129 @@ function minutesAgo(iso: string): string {
 }
 
 function ScoreBadge({ score }: { score: number }) {
-  const color =
-    score >= 70 ? 'var(--acc)' :
-    score >= 50 ? 'var(--warm)' :
-    'var(--neg)';
-  const inkColor =
-    score >= 70 ? 'var(--acc-ink)' : 'var(--fg)';
+  const color = score >= 8 ? '#16a34a' : score >= 5 ? '#ca8a04' : '#dc2626';
+  const percentage = Math.round((score / 10) * 100);
 
   return (
     <div
       style={{
-        width: 72, height: 72, borderRadius: '50%',
-        background: color, color: inkColor,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 80, height: 80, borderRadius: '50%',
+        background: color, color: '#fff',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         fontSize: 28, fontWeight: 700, flexShrink: 0,
         boxShadow: `0 0 0 8px color-mix(in oklch, ${color} 15%, transparent)`,
       }}
     >
-      {score}
+      <div>{score}</div>
+      <div style={{ fontSize: 10, opacity: 0.8 }}>/10</div>
     </div>
   );
 }
 
 export default function InformeClient({
-  feedRowId,
-  score,
-  summary,
-  pros,
-  cons,
-  createdAt,
+  feedScore,
+  analysisReport: analysis,
+  analysisCreatedAt,
   property: p,
 }: InformeClientProps) {
   const cover = p.image_urls[0] ?? null;
   const title = buildTitle(p);
   const price = formatPrice(p.price_value, p.price_type);
   const exp = p.expenses_value ? `+ ${formatPrice(p.expenses_value, null)} expensas` : null;
-  const timeLabel = minutesAgo(createdAt);
 
-  const scoreLabel =
-    score >= 70 ? 'Excelente match' :
-    score >= 50 ? 'Match moderado' :
-    'Match bajo';
+  const [isAnalyzing, setIsAnalyzing] = useState(!analysis);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  // Si no existe análisis, disparar uno en background
+  useEffect(() => {
+    if (analysis || !p.neighborhood) return;
+
+    const triggerAnalysis = async () => {
+      try {
+        const res = await fetch('/api/analysis/analyze', {
+          method: 'POST',
+          body: JSON.stringify({ neighborhood: p.neighborhood }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ message: 'Error desconocido' }));
+          setAnalysisError((err as Record<string, string>).message || 'No se pudo analizar la propiedad');
+          setIsAnalyzing(false);
+        } else {
+          // El análisis se guardó. En producción, refrescaríamos la página.
+          // Para ahora, solo dejamos que el usuario la recargue.
+          setIsAnalyzing(false);
+        }
+      } catch (err) {
+        setAnalysisError((err as Error).message || 'Error de conexión');
+        setIsAnalyzing(false);
+      }
+    };
+
+    const timer = setTimeout(triggerAnalysis, 500);
+    return () => clearTimeout(timer);
+  }, [analysis, p.neighborhood]);
+
+  if (!analysis) {
+    return (
+      <div className="app">
+        <AppSidebar />
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="topbar">
+            <div className="crumb">
+              <a href="/feed" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--fg-2)' }}>
+                <ArrowLeft size={14} strokeWidth={SW} /> Volver al feed
+              </a>
+              <span style={{ color: 'var(--fg-3)', margin: '0 8px' }}>/</span>
+              <b>Informe IA</b>
+            </div>
+            {p.zonapropUrl && (
+              <div className="right">
+                <a
+                  href={p.zonapropUrl}
+                  className="btn btn-ghost"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  Ver en Zonaprop <ExternalLink size={12} strokeWidth={SW} />
+                </a>
+              </div>
+            )}
+          </div>
+
+          <main style={{ padding: '40px 56px 80px', maxWidth: 900, width: '100%' }}>
+            <div style={{ textAlign: 'center', paddingTop: 40 }}>
+              {isAnalyzing ? (
+                <>
+                  <Loader size={40} style={{ margin: '0 auto 20px', animation: 'spin 1s linear infinite' }} />
+                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600 }}>Generando informe completo…</h2>
+                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
+                    Claude está analizando esta propiedad con web search. Esto puede tardar 30-90 segundos.
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--fg-3)' }}>Podés volver y recargar la página en unos momentos.</p>
+                </>
+              ) : analysisError ? (
+                <>
+                  <AlertTriangle size={40} style={{ margin: '0 auto 20px', color: 'var(--neg)' }} />
+                  <h2 style={{ marginTop: 0, fontSize: 20, fontWeight: 600, color: 'var(--neg)' }}>No se pudo generar el informe</h2>
+                  <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{analysisError}</p>
+                </>
+              ) : null}
+            </div>
+          </main>
+        </div>
+
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // Si existe análisis, mostrar completo
   return (
     <div className="app">
       <AppSidebar />
@@ -115,7 +196,11 @@ export default function InformeClient({
             <b>Informe IA</b>
           </div>
           <div className="right">
-            <div className="pill"><span className="pulse" />BOT ACTIVO · 3 búsquedas</div>
+            {analysisCreatedAt && (
+              <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                {minutesAgo(analysisCreatedAt).toUpperCase()}
+              </span>
+            )}
             {p.zonapropUrl && (
               <a
                 href={p.zonapropUrl}
@@ -135,7 +220,7 @@ export default function InformeClient({
           {/* Eyebrow */}
           <div className="eyebrow" style={{ marginBottom: 24 }}>
             <span className="dot" />
-            INFORME IA · GENERADO {timeLabel.toUpperCase()}
+            ANÁLISIS COMPLETO IA
           </div>
 
           {/* Property card */}
@@ -168,27 +253,27 @@ export default function InformeClient({
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {p.square_meters_area && (
-                    <span className="tag" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
+                    <span style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
                       {Math.round(p.square_meters_area)} m²
                     </span>
                   )}
                   {p.rooms && (
-                    <span className="tag" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
+                    <span style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
                       {p.rooms} amb.
                     </span>
                   )}
                   {p.bedrooms && (
-                    <span className="tag" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
+                    <span style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
                       {p.bedrooms} dorm.
                     </span>
                   )}
                   {p.bathrooms && (
-                    <span className="tag" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
+                    <span style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
                       {p.bathrooms} baño{p.bathrooms > 1 ? 's' : ''}
                     </span>
                   )}
                   {p.parking ? (
-                    <span className="tag" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
+                    <span style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: '4px 10px', borderRadius: 999, fontSize: 12 }}>
                       cochera
                     </span>
                   ) : null}
@@ -197,113 +282,188 @@ export default function InformeClient({
             </div>
           </div>
 
-          {/* Score + summary */}
+          {/* Score + justificación */}
           <div style={{
             background: 'var(--bg-1)', border: '1px solid var(--line)',
             borderRadius: 'var(--r-3)', padding: '28px', marginBottom: 24,
             display: 'flex', gap: 24, alignItems: 'flex-start',
           }}>
-            <ScoreBadge score={score} />
+            <ScoreBadge score={analysis.score} />
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>
-                  Score {score}
-                </h2>
-                <span style={{
-                  fontSize: 12, padding: '3px 10px', borderRadius: 999,
-                  background: score >= 70 ? 'oklch(0.92 0.205 116 / 0.12)' : score >= 50 ? 'oklch(0.72 0.155 45 / 0.12)' : 'oklch(0.68 0.20 25 / 0.12)',
-                  color: score >= 70 ? 'var(--acc)' : score >= 50 ? 'var(--warm)' : 'var(--neg)',
-                  border: `1px solid ${score >= 70 ? 'oklch(0.92 0.205 116 / 0.3)' : score >= 50 ? 'oklch(0.72 0.155 45 / 0.3)' : 'oklch(0.68 0.20 25 / 0.3)'}`,
-                }}>
-                  {scoreLabel}
-                </span>
-              </div>
-              {summary && (
+              <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>
+                Análisis: {analysis.score}/10
+              </h2>
+              <p style={{ margin: '0 0 12px', color: 'var(--fg-2)', fontSize: 13 }}>
+                {analysis.score_justificacion}
+              </p>
+              <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14, lineHeight: 1.55, fontStyle: 'italic' }}>
+                {analysis.resumen_ejecutivo}
+              </p>
+            </div>
+          </div>
+
+          {/* Veredicto */}
+          <div style={{
+            background: 'oklch(0.92 0.205 116 / 0.08)', border: '1px solid oklch(0.92 0.205 116 / 0.3)',
+            borderRadius: 'var(--r-3)', padding: '20px 24px', marginBottom: 24,
+          }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <CheckCircle size={18} strokeWidth={SW} style={{ color: 'var(--acc)', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: 'var(--acc)' }}>VEREDICTO</h3>
                 <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14, lineHeight: 1.55 }}>
-                  {summary}
+                  {analysis.veredicto}
                 </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Inmueble */}
+          <div style={{
+            background: 'var(--bg-1)', border: '1px solid var(--line)',
+            borderRadius: 'var(--r-3)', padding: '24px', marginBottom: 24,
+          }}>
+            <h3 style={{
+              margin: '0 0 18px', fontSize: 14, fontWeight: 600,
+              fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: 'var(--fg)',
+            }}>
+              Inmueble
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', marginBottom: 4 }}>Estado y calidad</div>
+                <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.55 }}>
+                  {analysis.inmueble.estado_y_calidad}
+                </p>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', marginBottom: 4 }}>Equipamiento</div>
+                <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.55 }}>
+                  {analysis.inmueble.equipamiento}
+                </p>
+              </div>
+
+              {/* Costos */}
+              <div>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', marginBottom: 10 }}>Costo total estimado mensual</div>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: '8px',
+                }}>
+                  {[
+                    ['Alquiler', analysis.inmueble.costo_total_estimado.alquiler],
+                    ['Expensas', analysis.inmueble.costo_total_estimado.expensas],
+                    ['ABL', analysis.inmueble.costo_total_estimado.abl_estimado],
+                    ['Servicios', analysis.inmueble.costo_total_estimado.servicios_estimados],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      style={{
+                        padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--line)',
+                        borderRadius: 'var(--r-1)',
+                      }}
+                    >
+                      <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>
+                        ${(value as number).toLocaleString('es-AR')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    marginTop: 10, padding: '12px 14px', background: '#111', color: '#fff',
+                    border: '1px solid #333', borderRadius: 'var(--r-1)',
+                  }}
+                >
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', color: '#999', marginBottom: 4 }}>
+                    Total mensual
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>
+                    ${analysis.inmueble.costo_total_estimado.total_mensual.toLocaleString('es-AR')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Red flags */}
+              {analysis.inmueble.red_flags.length > 0 && (
+                <div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    fontSize: 11, textTransform: 'uppercase', color: 'var(--neg)', marginBottom: 10,
+                  }}>
+                    <AlertTriangle size={13} strokeWidth={SW} />
+                    Red flags
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {analysis.inmueble.red_flags.map((flag, i) => (
+                      <li key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--neg)' }}>
+                        <span style={{ flexShrink: 0 }}>!</span>
+                        {flag}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Pros & cons */}
-          {(pros.length > 0 || cons.length > 0) && (
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24,
+          {/* Entorno */}
+          <div style={{
+            background: 'var(--bg-1)', border: '1px solid var(--line)',
+            borderRadius: 'var(--r-3)', padding: '24px', marginBottom: 24,
+          }}>
+            <h3 style={{
+              margin: '0 0 18px', fontSize: 14, fontWeight: 600,
+              fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: 'var(--fg)',
             }}>
-              {pros.length > 0 && (
-                <div style={{
-                  background: 'var(--bg-1)', border: '1px solid var(--line)',
-                  borderRadius: 'var(--r-3)', padding: '24px',
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    marginBottom: 16,
-                  }}>
-                    <CheckCircle size={15} strokeWidth={SW} style={{ color: 'var(--pos)', flexShrink: 0 }} />
-                    <span style={{
-                      fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-                      letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--pos)',
-                    }}>
-                      A favor
-                    </span>
+              Entorno
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                ['Seguridad', analysis.entorno.seguridad],
+                ['Transporte', analysis.entorno.transporte],
+                ['Educación', analysis.entorno.educacion],
+                ['Salud', analysis.entorno.salud],
+                ['Ocio', analysis.entorno.ocio],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--fg-2)', marginBottom: 4 }}>
+                    {label}
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {pros.map((pro, i) => (
-                      <li key={i} style={{ display: 'flex', gap: 10, fontSize: 13.5, color: 'var(--fg-1)', lineHeight: 1.4 }}>
-                        <span style={{ color: 'var(--pos)', flexShrink: 0, marginTop: 2 }}>+</span>
-                        {pro}
-                      </li>
-                    ))}
-                  </ul>
+                  <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.55 }}>
+                    {value as string}
+                  </p>
                 </div>
-              )}
-              {cons.length > 0 && (
-                <div style={{
-                  background: 'var(--bg-1)', border: '1px solid var(--line)',
-                  borderRadius: 'var(--r-3)', padding: '24px',
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    marginBottom: 16,
-                  }}>
-                    <AlertTriangle size={15} strokeWidth={SW} style={{ color: 'var(--warm)', flexShrink: 0 }} />
-                    <span style={{
-                      fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-                      letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--warm)',
-                    }}>
-                      A tener en cuenta
-                    </span>
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {cons.map((con, i) => (
-                      <li key={i} style={{ display: 'flex', gap: 10, fontSize: 13.5, color: 'var(--fg-1)', lineHeight: 1.4 }}>
-                        <span style={{ color: 'var(--warm)', flexShrink: 0, marginTop: 2 }}>!</span>
-                        {con}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              ))}
             </div>
-          )}
+          </div>
 
-          {/* Description */}
-          {p.description_summary && (
+          {/* Preguntas para la inmobiliaria */}
+          {analysis.preguntas_inmobiliaria.length > 0 && (
             <div style={{
               background: 'var(--bg-1)', border: '1px solid var(--line)',
               borderRadius: 'var(--r-3)', padding: '24px', marginBottom: 24,
             }}>
               <h3 style={{
-                margin: '0 0 12px', fontSize: 13, fontWeight: 600,
+                margin: '0 0 14px', fontSize: 14, fontWeight: 600,
                 fontFamily: '"JetBrains Mono", monospace', letterSpacing: '0.1em',
-                textTransform: 'uppercase', color: 'var(--fg-2)',
+                textTransform: 'uppercase', color: 'var(--fg)',
               }}>
-                Descripción
+                Preguntas para la inmobiliaria
               </h3>
-              <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14, lineHeight: 1.6 }}>
-                {p.description_summary}
-              </p>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {analysis.preguntas_inmobiliaria.map((q, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 10, fontSize: 13.5, color: 'var(--fg-1)' }}>
+                    <span style={{ flexShrink: 0, marginTop: 2 }}>→</span>
+                    {q}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
