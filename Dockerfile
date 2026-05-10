@@ -24,6 +24,8 @@ RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 # Lockfile + manifest layer (cached)
 COPY --from=pruner /repo/out/json/ .
 COPY --from=pruner /repo/out/pnpm-lock.yaml ./pnpm-lock.yaml
+# Ensure node-linker=hoisted from .npmrc is respected during install
+COPY --from=pruner /repo/.npmrc ./.npmrc
 RUN pnpm install --frozen-lockfile
 
 # Source layer + Prisma generate + build
@@ -36,7 +38,9 @@ RUN pnpm --filter api run build
 # ---------- 3. Runtime image ----------
 FROM node:${NODE_VERSION}-alpine AS runner
 RUN apk add --no-cache libc6-compat openssl tini
-WORKDIR /app
+# Keep WORKDIR at /repo so pnpm hoisted symlinks (node_modules/@repo/*)
+# continue to resolve correctly — they were created relative to /repo.
+WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 
 ENV NODE_ENV=production
