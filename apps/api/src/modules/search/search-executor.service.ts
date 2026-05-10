@@ -27,6 +27,8 @@ interface PropiedadFilteredRow {
   parking: number | null;
   square_meters_area: number | null;
   description: string | null;
+  seller_whatsapp_digits: string | null;
+  has_whatsapp: boolean | null;
 }
 
 interface AnalysisRow {
@@ -68,12 +70,19 @@ export class SearchExecutorService {
       return { results: [], notice: 'No se encontraron propiedades que matcheen los filtros estructurados.' };
     }
 
-    const urls = Array.from(
+    // Cap the URL set we send to PostgREST: every URL goes into the IN(...) of
+    // the analyses query, and ~150 URLs at ~100 chars each already approach the
+    // 16 KB request-line limit and trigger `fetch failed`. We keep the first
+    // chunk because `properties` is still in the order Supabase returned them,
+    // which is good enough as a sample.
+    const allUrls = Array.from(
       new Set(properties.map((p) => normalizeUrl(p.url)).filter((u): u is string => u !== null)),
     );
-    if (urls.length === 0) {
+    if (allUrls.length === 0) {
       return { results: [], notice: 'Las propiedades encontradas no tienen URL válida para cruzar con análisis.' };
     }
+    const URLS_QUERY_LIMIT = 80;
+    const urls = allUrls.slice(0, URLS_QUERY_LIMIT);
 
     // Query analyses with optional vectorial ranking
     let analyses: AnalysisRow[];
@@ -94,36 +103,54 @@ export class SearchExecutorService {
       analyses = await this.queryAnalyses(urls, filters.min_score);
     }
 
-    if (analyses.length === 0) {
-      return {
-        results: [],
-        notice:
-          'Las propiedades que matchean los filtros aún no tienen análisis generados. Probá ampliar criterios o esperá a que se procesen.',
-      };
-    }
-
     const propertyByUrl = new Map<string, PropiedadFilteredRow>();
     for (const p of properties) {
       const norm = normalizeUrl(p.url);
       if (norm) propertyByUrl.set(norm, p);
     }
+    const analysisByUrl = new Map<string, AnalysisRow>();
+    for (const a of analyses) {
+      analysisByUrl.set(a.url, a);
+    }
+
+    // ALWAYS merge analyzed + raw — never drop the un-analyzed candidates,
+    // because the frontend's stage 4 enriches them. Order: analyzed first
+    // (real score DESC), then raw (price ASC). Cap to MAX_RESULTS at the end.
+    const analyzedUrls = analyses.map((a) => a.url).filter((u) => propertyByUrl.has(u));
+    const rawUrls = Array.from(propertyByUrl.keys()).filter((u) => !analysisByUrl.has(u));
+
+    rawUrls.sort((u1, u2) => {
+      const p1 = propertyByUrl.get(u1)!;
+      const p2 = propertyByUrl.get(u2)!;
+      return (p1.price_value ?? Infinity) - (p2.price_value ?? Infinity);
+    });
+
+    const orderedUrls = [...analyzedUrls, ...rawUrls].slice(0, MAX_RESULTS);
 
     const merged: SearchResultItem[] = [];
-    for (const a of analyses) {
-      const p = propertyByUrl.get(a.url);
+    for (const url of orderedUrls) {
+      const p = propertyByUrl.get(url);
       if (!p) continue;
-      merged.push(toResultItem(a, p));
+      const a = analysisByUrl.get(url);
+      merged.push(a ? toResultItem(a, p) : toResultItemFromProperty(p));
     }
+
+    const rawCount = merged.filter((r) => r.analysis_id.startsWith('prop:')).length;
+    const analysesNotice: string | null = rawCount > 0
+      ? `${analyzedUrls.length} con análisis · ${rawCount} pendientes de análisis (la app las va a analizar a continuación).`
+      : null;
 
     const filtered = applyFeatureFilter(merged, filters.must_have_features);
 
-    let notice: string | null = null;
+    let featureNotice: string | null = null;
     if (filtered.length === 0 && merged.length > 0 && filters.must_have_features.length > 0) {
-      notice = `No hay resultados que mencionen explícitamente: ${filters.must_have_features.join(', ')}. Mostrando lista sin ese filtro.`;
+      featureNotice = `No hay resultados que mencionen explícitamente: ${filters.must_have_features.join(', ')}. Mostrando lista sin ese filtro.`;
       filtered.push(...merged);
     }
 
-    // Results are already sorted by score (queryAnalyses) or similarity (queryAnalysesWithEmbedding)
+    const notice = featureNotice ?? analysesNotice;
+
+    // Results are already sorted by score (queryAnalyses) / similarity / price.
     return { results: filtered.slice(0, MAX_RESULTS), notice };
   }
 
@@ -131,16 +158,27 @@ export class SearchExecutorService {
     let query = this.supabase.admin
       .from(this.propertiesTable)
       .select(
-        'url, posting_id, address, neighborhood, price_value, price_type, rooms, bedrooms, bathrooms, parking, square_meters_area, description',
+        'url, posting_id, address, neighborhood, price_value, price_type, rooms, bedrooms, bathrooms, parking, square_meters_area, description, seller_whatsapp_digits, has_whatsapp',
       )
       .not('url', 'is', null)
+      // Only contactable listings — without a phone an agent can't message.
+      .not('seller_whatsapp_digits', 'is', null)
       .limit(PROPERTIES_FETCH_LIMIT);
 
+    // Neighborhoods: use ILIKE OR so "Palermo" matches "Palermo Hollywood",
+    // "Palermo Soho", etc. The DB stores them as separate distinct values.
     if (filters.neighborhoods.length > 0) {
-      query = query.in('neighborhood', filters.neighborhoods);
+      const orClause = filters.neighborhoods
+        .map((n) => `neighborhood.ilike.%${escapePgIlike(n)}%`)
+        .join(',');
+      query = query.or(orClause);
     }
     if (filters.price_max !== null) {
-      query = query.lte('price_value', filters.price_max).eq('price_type', filters.price_currency);
+      query = query.lte('price_value', filters.price_max);
+      // The DB stores ARS prices as price_type='$', not 'ARS'. Map our domain
+      // value to the actual stored sentinel.
+      const dbPriceType = filters.price_currency === 'USD' ? 'USD' : '$';
+      query = query.eq('price_type', dbPriceType);
     }
     if (filters.min_rooms !== null) {
       query = query.gte('rooms', filters.min_rooms);
@@ -224,6 +262,37 @@ function toResultItem(a: AnalysisRow, p: PropiedadFilteredRow): SearchResultItem
     score: a.score,
     resumen_ejecutivo: a.report.resumen_ejecutivo ?? '',
     red_flags: a.report.inmueble?.red_flags ?? [],
+    seller_whatsapp_digits: p.seller_whatsapp_digits,
+    has_whatsapp: p.has_whatsapp,
+  };
+}
+
+/**
+ * Build a SearchResultItem from raw property data when no AnalysisRow exists.
+ * The `analysis_id` falls back to a stable synthetic id derived from the URL
+ * so the frontend can still key lists/maps by it.
+ */
+function toResultItemFromProperty(p: PropiedadFilteredRow): SearchResultItem {
+  const summary = (p.description ?? '').replace(/\s+/g, ' ').trim();
+  const truncated = summary.length > 280 ? summary.slice(0, 277) + '…' : summary;
+  // queryProperties already filters .not('url', 'is', null), so we can assert.
+  const url = normalizeUrl(p.url) ?? '';
+  return {
+    analysis_id: `prop:${p.posting_id}`,
+    url,
+    address: p.address,
+    neighborhood: p.neighborhood,
+    price_value: p.price_value,
+    price_type: p.price_type,
+    rooms: p.rooms,
+    bedrooms: p.bedrooms,
+    bathrooms: p.bathrooms,
+    square_meters_area: p.square_meters_area,
+    score: 7, // neutral placeholder on the 0–10 scale
+    resumen_ejecutivo: truncated || 'Sin descripción disponible.',
+    red_flags: [],
+    seller_whatsapp_digits: p.seller_whatsapp_digits,
+    has_whatsapp: p.has_whatsapp,
   };
 }
 
@@ -240,4 +309,14 @@ function applyFeatureFilter(items: SearchResultItem[], features: string[]): Sear
 
 function stripAccents(text: string): string {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+/**
+ * Escape characters that have meaning inside a PostgREST `or()` clause for
+ * ilike: commas (separate filters) and parentheses (group). Backslashes the
+ * usual `%` and `_` aren't escaped here — we use `%` ourselves around the
+ * neighborhood term and accept that `_` matches any single char.
+ */
+function escapePgIlike(input: string): string {
+  return input.replace(/([,()])/g, '\\$1');
 }

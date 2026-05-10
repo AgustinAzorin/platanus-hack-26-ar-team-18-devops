@@ -364,8 +364,8 @@ function ResultsView({
           Volver al chat
         </button>
         <div className="th-info" style={{ marginLeft: 4 }}>
-          <div className="th-name">Resultados</div>
-          <div className="th-sub">{results.results.length} PROPIEDADES · CLAUDE SONNET 4.6</div>
+          <div className="th-name">Top {results.results.length} para contactar</div>
+          <div className="th-sub">RANKEADAS POR SCORE · CLAUDE SONNET 4.6</div>
         </div>
       </div>
 
@@ -452,7 +452,7 @@ function ResultsView({
                       color: r.score >= 8 ? 'var(--acc)' : r.score >= 6 ? 'var(--warm)' : 'var(--fg-2)',
                       fontSize: 12, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace',
                     }}>
-                      {r.score}/10
+                      {Math.round(r.score * 10)}/100
                     </div>
                   </div>
 
@@ -483,17 +483,37 @@ function ResultsView({
                     </ul>
                   )}
 
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      marginTop: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 12, color: 'var(--acc)', alignSelf: 'flex-start',
-                    }}
-                  >
-                    Ver publicación <ExternalLink size={11} strokeWidth={SW} />
-                  </a>
+                  <div style={{ marginTop: 'auto', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        fontSize: 12, color: 'var(--acc)',
+                      }}
+                    >
+                      Ver publicación <ExternalLink size={11} strokeWidth={SW} />
+                    </a>
+                    {r.seller_whatsapp_digits && (
+                      <a
+                        href={`https://wa.me/${r.seller_whatsapp_digits.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          marginLeft: 'auto',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontSize: 12, fontWeight: 500,
+                          padding: '6px 12px', borderRadius: 8,
+                          background: 'oklch(0.55 0.17 150 / 0.25)',
+                          border: '1px solid oklch(0.55 0.17 150 / 0.5)',
+                          color: 'oklch(0.85 0.15 150)',
+                        }}
+                      >
+                        Contactar +{r.seller_whatsapp_digits}
+                      </a>
+                    )}
+                  </div>
                 </article>
               );
             })}
@@ -728,6 +748,82 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
       if (response.notice) {
         flush('dim', '');
         flush('error', `  ! notice: ${response.notice}`);
+      }
+
+      // ── Stage 4: enrich every raw result with /analysis/analyze ──────────
+      // The agent will later message the top 5 listings, so we want the score
+      // and summary on ALL of them before picking. Backend already filters out
+      // listings without `seller_whatsapp_digits`, so everything here is
+      // contactable.
+      const ENRICH_LIMIT = 30;
+      const BATCH_SIZE = 3; // parallel analyses per batch; respects Anthropic rate limits
+      const fallbackItems = response.results
+        .filter((r) => r.analysis_id.startsWith('prop:'))
+        .slice(0, ENRICH_LIMIT);
+      const total = fallbackItems.length;
+
+      if (total > 0) {
+        flush('dim', '');
+        flush('info', `── stage 4: enriching ${total} contactable listings ──`);
+        flush('dim', `  running /analysis/analyze in batches of ${BATCH_SIZE}`);
+        flush('dim', '  (each call: claude-sonnet-4-6 + web_search + overpass + voyage)');
+
+        let completed = 0;
+        for (let i = 0; i < fallbackItems.length; i += BATCH_SIZE) {
+          const batch = fallbackItems.slice(i, i + BATCH_SIZE);
+          flush('cmd', `  [batch ${Math.floor(i / BATCH_SIZE) + 1}] starting ${batch.length} parallel analyses`);
+
+          await Promise.all(batch.map(async (item) => {
+            const postingId = item.analysis_id.replace(/^prop:/, '');
+            const propStart = Date.now();
+            try {
+              const analyzed = await apiClient.analysis.analyzeByPostingId(postingId);
+              const took = ((Date.now() - propStart) / 1000).toFixed(1);
+              const score10 = (analyzed as { score?: number }).score ?? null;
+              const score100 = score10 !== null ? Math.round(score10 * 10) : null;
+              completed += 1;
+              flush(
+                'success',
+                `    [${completed}/${total}] ✓ ${postingId}  ·  ${took}s${score100 !== null ? `  ·  score ${score100}/100` : ''}  ·  ${item.address?.slice(0, 40) ?? '—'}`,
+              );
+            } catch (e) {
+              completed += 1;
+              const msg = e instanceof Error ? e.message : 'analysis failed';
+              flush('error', `    [${completed}/${total}] ✗ ${postingId}: ${msg}`);
+            }
+          }));
+        }
+
+        // Re-fetch search now that the analyses are persisted — the executor
+        // will now sort by real score and the items will have summaries / red flags.
+        flush('dim', '');
+        flush('info', '── re-running search to pick up new analyses ──');
+        try {
+          const refreshed = await apiClient.search.query(query);
+
+          // Filter to only contactable listings (defensive — backend already
+          // does this) and pick top 5 by score.
+          const TOP_N = 5;
+          const top = refreshed.results
+            .filter((r) => r.seller_whatsapp_digits && r.seller_whatsapp_digits.length > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, TOP_N);
+
+          flush('success', `  ✓ refreshed: ${refreshed.results.length} contactable, picking top ${top.length} by score`);
+          flush('dim', '');
+          flush('info', '── top 5 (an agent will message them) ──');
+          for (const [i, r] of top.entries()) {
+            const score100 = Math.round(r.score * 10);
+            const phone = r.seller_whatsapp_digits;
+            flush('data', `  #${i + 1}  ${score100}/100  ·  +${phone}  ·  ${r.address?.slice(0, 50) ?? '—'}  ·  ${r.neighborhood ?? ''}`);
+          }
+
+          // Show only the top 5 in the ResultsView.
+          setSearchResults({ ...refreshed, results: top });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'refresh failed';
+          flush('error', `  ✗ ${msg}`);
+        }
       }
 
       flush('dim', '');

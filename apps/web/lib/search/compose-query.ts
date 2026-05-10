@@ -2,20 +2,17 @@ import type { ClientProfile, SearchFilters } from './types';
 
 /**
  * Build a natural-language Spanish query for the backend `/search/query`
- * endpoint, combining the structured filters captured during the Q&A AND the
- * client profile. The backend's `SearchTranslatorService` (Claude) re-parses
- * this back into structured `SearchFilters`, including the must-have features.
+ * endpoint. Includes ONLY listing-level criteria (zone, price, rooms,
+ * features). Profile fields (pet, real estate, guarantor, caución) are NOT
+ * filters of the listing — they live on the user row in the DB and inform
+ * downstream agent conversations with the seller.
  *
- * We deliberately phrase profile fields as *requirements on the listing*
- * (e.g. "que acepte mascotas", "que acepte caución") so the translator picks
- * them up as `must_have_features` or `free_text_query`. The profile values
- * themselves stay in the DB; this query only reflects what the user wants.
+ * The `_profile` parameter is kept for symmetry with the call site and may
+ * be used later to enrich the query with optional context if needed.
  */
-export function composeSearchQuery(filters: SearchFilters, profile: ClientProfile): string {
+export function composeSearchQuery(filters: SearchFilters, _profile: ClientProfile): string {
   const parts: string[] = [];
 
-  // Operation: implicit venta (the backend defaults to that and the DB only
-  // has venta listings). If we ever support alquiler, derive from filters.
   parts.push('Busco departamento');
 
   if (filters.neighborhoods.length > 0) {
@@ -43,17 +40,6 @@ export function composeSearchQuery(filters: SearchFilters, profile: ClientProfil
 
   if (filters.move_in_date) {
     parts.push(`para mudarme ${filters.move_in_date}`);
-  }
-
-  // Profile-driven requirements on the listing:
-  if (profile.has_pet === true) {
-    parts.push('que acepte mascotas (tengo una)');
-  }
-  if (profile.has_guarantor === false) {
-    parts.push('que acepte sin garante propietario');
-  }
-  if (profile.caucion_status === 'has' || profile.caucion_status === 'can_contract') {
-    parts.push('que acepte seguro de caución');
   }
 
   if (filters.free_text_query && filters.free_text_query.trim().length > 0) {

@@ -28,6 +28,8 @@ export interface SearchResultItem {
   score: number;
   resumen_ejecutivo: string;
   red_flags: string[];
+  seller_whatsapp_digits: string | null;
+  has_whatsapp: boolean | null;
 }
 
 export interface MetaReportRecommendation {

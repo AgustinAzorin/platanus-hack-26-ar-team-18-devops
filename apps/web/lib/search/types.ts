@@ -95,9 +95,11 @@ export interface SearchResultItem {
   bedrooms: number | null;
   bathrooms: number | null;
   square_meters_area: number | null;
-  score: number;
+  score: number;                           // 0–10 scale (raw from backend)
   resumen_ejecutivo: string;
   red_flags: string[];
+  seller_whatsapp_digits: string | null;
+  has_whatsapp: boolean | null;
 }
 
 export interface MetaReportRecommendation {

@@ -76,6 +76,13 @@ export const apiClient = {
         schema: AnalyzePropertyResponseSchema,
       });
     },
+    analyzeByPostingId(postingId: string): Promise<AnalyzePropertyResponse> {
+      return request('/analysis/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ posting_id: postingId }),
+        schema: AnalyzePropertyResponseSchema,
+      });
+    },
   },
   search: {
     /**
