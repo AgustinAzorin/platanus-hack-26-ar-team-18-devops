@@ -28,6 +28,7 @@ RUN pnpm install --frozen-lockfile
 
 # Source layer + Prisma generate + build
 COPY --from=pruner /repo/out/full/ .
+RUN pnpm --filter @repo/types run build
 RUN pnpm --filter @repo/database run db:generate
 RUN pnpm --filter api run build
 
