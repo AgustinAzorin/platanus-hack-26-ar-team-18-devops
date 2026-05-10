@@ -30,6 +30,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /repo/out/full/ .
 RUN pnpm --filter @repo/types run build
 RUN pnpm --filter @repo/database run db:generate
+RUN pnpm --filter @repo/database run build
 RUN pnpm --filter api run build
 
 # ---------- 3. Runtime image ----------
