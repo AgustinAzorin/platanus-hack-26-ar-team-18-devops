@@ -48,7 +48,7 @@ export default function HomePage() {
       composerRef.current?.focus();
       return;
     }
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    router.push(`/chats?q=${encodeURIComponent(trimmed)}`);
   }
 
   function initAnimations() {
