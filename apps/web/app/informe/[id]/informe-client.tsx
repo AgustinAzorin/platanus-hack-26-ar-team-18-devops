@@ -29,7 +29,7 @@ interface InformeClientProps {
   feedRowId: string;
   feedScore: number;
   analysisReport: AnalysisReport;
-  analysisCreatedAt: string;
+  analysisCreatedAt: string | null;
   property: PropertyInfo;
 }
 
