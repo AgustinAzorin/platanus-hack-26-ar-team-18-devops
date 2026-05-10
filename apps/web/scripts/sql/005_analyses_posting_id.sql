@@ -13,3 +13,7 @@ alter table public.analyses
 
 create index if not exists analyses_posting_id_idx
   on public.analyses (posting_id);
+
+-- Disable RLS so the web app's anon-key client can read reports for the feed
+-- and pending pages. Matches the convention used in 004 for `feed_results`.
+alter table public.analyses disable row level security;

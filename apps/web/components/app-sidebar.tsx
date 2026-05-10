@@ -26,8 +26,6 @@ const NAV: readonly NavItem[] = [
   { id: 'feed',       href: '/feed',       label: 'Encontrados',     ico: 'stack',  badgeKey: 'found',       group: 'principal' },
   { id: 'chats',      href: '/chats',      label: 'Conversaciones',  ico: 'chat',   badgeKey: 'unread_chats',group: 'principal' },
   { id: 'pending',    href: '/pending',    label: 'Pendientes',      ico: 'bell',   badgeKey: 'pending',    urgent: true, group: 'principal' },
-  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',        ico: 'spark',                           group: 'operación' },
-  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',   ico: 'wand',                            group: 'operación' },
 ] as const;
 
 const navIcons = {

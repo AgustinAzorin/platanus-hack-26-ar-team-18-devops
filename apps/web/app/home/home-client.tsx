@@ -219,7 +219,7 @@ export default function HomeClient({ initialActivity }: HomeClientProps) {
                 <span className="hero-line" style={{ display: 'block', color: 'var(--acc)' }}>Yo me ocupo.</span>
               </h1>
               <p className="hero-lede" style={{ maxWidth: 580, margin: '16px auto 0', color: 'var(--fg-1)', fontSize: 16, lineHeight: 1.5 }}>
-                Vos describí. Casita scrapea ArgenProp, Zonaprop, Mercado Libre, escribe a los dueños por WhatsApp y te avisa cuando hay match.
+                Vos describí. Casita revisa los portales por vos, escribe a los dueños por WhatsApp y te avisa cuando hay match.
               </p>
             </section>
 

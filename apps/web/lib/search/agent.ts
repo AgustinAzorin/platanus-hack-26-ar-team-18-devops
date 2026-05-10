@@ -113,12 +113,6 @@ interface AgentInput {
   messages: ChatTurn[];
   filters: SearchFilters;
   profile: ClientProfile;
-  /**
-   * Pills the user clicked since the last assistant turn. They are NOT in
-   * `messages` (the UI keeps the thread clean of pill clicks); we synthesize
-   * them into a user turn here so the LLM sees the choices.
-   */
-  selectedPills: string[];
 }
 
 interface AgentOutput {
@@ -129,22 +123,8 @@ interface AgentOutput {
   suggestions: string[];
 }
 
-export async function runChatTurn({ messages, filters, profile, selectedPills }: AgentInput): Promise<AgentOutput> {
+export async function runChatTurn({ messages, filters, profile }: AgentInput): Promise<AgentOutput> {
   const augmented: ChatTurn[] = [...messages];
-
-  // If the user clicked pills since the last assistant turn, attach them as a
-  // pill-selection annotation. If the last turn is `user` (the user typed AND
-  // clicked), append to that turn. Otherwise (only pills, no text) synthesize a
-  // user turn so the API alternation is preserved.
-  if (selectedPills.length > 0) {
-    const pillsBlock = `[user_selected_pills]\n${selectedPills.map((p) => `- ${p}`).join('\n')}`;
-    const last = augmented[augmented.length - 1];
-    if (last && last.role === 'user') {
-      augmented[augmented.length - 1] = { ...last, content: `${last.content}\n\n${pillsBlock}` };
-    } else {
-      augmented.push({ role: 'user', content: pillsBlock });
-    }
-  }
 
   // Inject the running filters AND profile into the latest user turn.
   if (augmented.length > 0) {

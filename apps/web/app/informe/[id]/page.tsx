@@ -1,19 +1,11 @@
 import { notFound } from 'next/navigation';
 import type { AnalysisReport } from '@repo/types';
 
-import { getCurrentClientUserId } from '../../../lib/search/profile';
 import { createServiceClient } from '../../../lib/supabase/service';
 
 import InformeClient from './informe-client';
 
 export const dynamic = 'force-dynamic';
-
-interface FeedResultRow {
-  id: string;
-  posting_id: string;
-  match_score: number | null;
-  created_at: string;
-}
 
 interface PropiedadRow {
   posting_id: string;
@@ -36,7 +28,8 @@ interface PropiedadRow {
 
 interface AnalysisRow {
   id: string;
-  url: string;
+  posting_id: string | null;
+  score: number | null;
   report: AnalysisReport;
   created_at: string;
 }
@@ -44,81 +37,48 @@ interface AnalysisRow {
 export default async function InformePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createServiceClient();
-  const userId = await getCurrentClientUserId();
 
-  const { data: feedRow, error: feedError } = await supabase
-    .from('feed_results')
-    .select('id, posting_id, match_score, created_at')
+  // The /informe URL param is `analyses.id` — the source of truth for reports.
+  // We don't go through `feed_results` anymore; the feed list is built directly
+  // from `analyses` so the id passed here always points at a real row.
+  const { data: analysisData, error: analysisError } = await supabase
+    .from('analyses')
+    .select('id, posting_id, score, report, created_at')
     .eq('id', id)
-    .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
-  if (feedError || !feedRow) notFound();
+  if (analysisError || !analysisData) notFound();
 
-  const row = feedRow as FeedResultRow;
+  const analysisRow = analysisData as AnalysisRow;
+  if (!analysisRow.posting_id) notFound();
 
-  const { data: propRow, error: propError } = await supabase
+  const { data: propData, error: propError } = await supabase
     .from('propiedades')
     .select(
       'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary',
     )
-    .eq('posting_id', row.posting_id)
+    .eq('posting_id', analysisRow.posting_id)
     .single();
 
-  if (propError || !propRow) notFound();
+  if (propError || !propData) notFound();
 
-  const prop = propRow as PropiedadRow;
+  const prop = propData as PropiedadRow;
 
-  // Build full zonaprop URL (used as a back-compat lookup and for the "Ver en
-  // Zonaprop" button)
   const zonapropUrl = prop.url
     ? prop.url.startsWith('http')
       ? prop.url
       : `https://www.zonaprop.com.ar${prop.url}`
     : null;
 
-  // Find the analysis linked to this specific property. The chat-driven
-  // executor persists analyses with the property's posting_id, so we look up
-  // by FK instead of by URL (URL was unreliable: the API used to analyze the
-  // first property of a neighborhood, leaving stale URLs in `analyses`).
-  let analysis: AnalysisReport | null = null;
-  let analysisCreatedAt: string | null = null;
-
-  const { data: analysisRow } = await supabase
-    .from('analyses')
-    .select('id, report, created_at')
-    .eq('posting_id', row.posting_id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (analysisRow) {
-    analysis = (analysisRow as AnalysisRow).report;
-    analysisCreatedAt = (analysisRow as AnalysisRow).created_at;
-  } else if (zonapropUrl) {
-    // Back-compat fallback: rows persisted before posting_id existed.
-    const { data: legacyRow } = await supabase
-      .from('analyses')
-      .select('id, report, created_at')
-      .eq('url', zonapropUrl)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (legacyRow) {
-      analysis = (legacyRow as AnalysisRow).report;
-      analysisCreatedAt = (legacyRow as AnalysisRow).created_at;
-    }
-  }
-
-  if (!analysis) notFound();
+  // analyses.score is on a 0–10 scale; rescale to 0–100 for the badge UI.
+  const feedScore = Math.round((analysisRow.score ?? analysisRow.report.score ?? 0) * 10);
 
   return (
     <InformeClient
-      feedRowId={row.id}
-      feedScore={row.match_score ?? 0}
-      analysisReport={analysis}
-      analysisCreatedAt={analysisCreatedAt}
+      feedRowId={analysisRow.id}
+      feedScore={feedScore}
+      analysisReport={analysisRow.report}
+      analysisCreatedAt={analysisRow.created_at}
       property={{
         posting_id: prop.posting_id,
         address: prop.address,

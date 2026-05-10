@@ -93,6 +93,31 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
         Relationships: [];
       };
+      analyses: {
+        Row: {
+          id: string;
+          url: string;
+          posting_id: string | null;
+          scraped_data: Record<string, unknown>;
+          report: Record<string, unknown>;
+          score: number | null;
+          visual_description: string | null;
+          visual_embedding: number[] | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          url: string;
+          posting_id?: string | null;
+          scraped_data: Record<string, unknown>;
+          report: Record<string, unknown>;
+          score?: number | null;
+          visual_description?: string | null;
+          visual_embedding?: number[] | null;
+        };
+        Update: Partial<Database['public']['Tables']['analyses']['Insert']>;
+        Relationships: [];
+      };
       feed_results: {
         Row: {
           id: string;

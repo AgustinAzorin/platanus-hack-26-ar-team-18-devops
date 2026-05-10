@@ -1,4 +1,5 @@
-import { getCurrentClientUserId } from '../../lib/search/profile';
+import type { AnalysisReport } from '@repo/types';
+
 import { createClient } from '../../lib/supabase/server';
 import { createServiceClient } from '../../lib/supabase/service';
 
@@ -25,8 +26,8 @@ export interface FeedCard {
   cons?: string[];
   discarded?: boolean;
   approveAction: 'detail-chat' | 'approve-detail' | 'force-detail' | 'feed-decide';
-  feedRowId?: string;     // present when this card came from feed_results — needed by accept/reject
-  matchScore?: number;    // 0..100 from feed_results
+  feedRowId?: string;     // analyses.id — drives /informe/[id] navigation
+  matchScore?: number;    // 0..100 (analyses.score scaled)
 }
 
 export interface FeedSummary {
@@ -59,94 +60,60 @@ interface PropiedadRow {
   description_summary?: string | null;
 }
 
-interface FeedResultRow {
+interface AnalysisRow {
   id: string;
   posting_id: string;
-  match_score: number | null;
-  report_summary: string | null;
-  report_highlights: { pros?: string[]; cons?: string[] } | null;
+  score: number | null;
+  report: AnalysisReport;
   created_at: string;
 }
 
 const SELECT =
   'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary';
 
-const STATUS_CYCLE: Array<FeedCard['statusKind']> = [
-  'responded-fed',
-  'casita-wrote',
-  'pending',
-  'casita-called',
-  'mariana',
-  'discarded',
-  'casita-wrote',
-  'pending',
-  'casita-no-response',
-];
-
 export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
-  const aiCards = await fetchAiFeed(limit);
-  if (aiCards.length > 0) {
-    const summary: FeedSummary = {
-      total: aiCards.length,
-      scanned: aiCards.length,
-      filtered: aiCards.length,
-      contacted: 0,
-      responded: 0,
-      pending: aiCards.length,
-      discarded: 0,
-      fromAI: true,
-    };
-    return { cards: aiCards, summary };
-  }
-  return fetchMockFeed(limit);
+  const cards = await fetchAnalysisFeed(limit);
+  const summary: FeedSummary = {
+    total: cards.length,
+    scanned: cards.length,
+    filtered: cards.length,
+    contacted: 0,
+    responded: 0,
+    pending: cards.length,
+    discarded: 0,
+    fromAI: true,
+  };
+  return { cards, summary };
 }
 
-async function fetchAiFeed(limit: number): Promise<FeedCard[]> {
-  const userId = await getCurrentClientUserId();
+async function fetchAnalysisFeed(limit: number): Promise<FeedCard[]> {
   const supabase = createServiceClient();
   const { data, error } = await supabase
-    .from('feed_results')
-    .select('id, posting_id, match_score, report_summary, report_highlights, created_at')
-    .eq('user_id', userId)
-    .eq('status', 'pending')
-    .order('match_score', { ascending: false })
+    .from('analyses')
+    .select('id, posting_id, score, report, created_at')
+    .not('posting_id', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error || !data || data.length === 0) {
-    if (error) console.warn('[feed] feed_results query failed (table may not exist yet):', error.message);
+  const rows = (data ?? []) as AnalysisRow[];
+  if (error || rows.length === 0) {
+    if (error) console.warn('[feed] analyses query failed:', error.message);
     return [];
   }
-  const allRows = data as FeedResultRow[];
 
-  // Only show rows whose property has an actual analysis row. Otherwise the
-  // "Ver informe" button leads to a 404 because /informe/[id] requires the
-  // analysis to exist.
-  const postingIds = allRows.map((r) => r.posting_id);
-  const { data: analysisRows } = await supabase
-    .from('analyses')
-    .select('posting_id')
-    .in('posting_id', postingIds);
-  const withAnalysis = new Set<string>(
-    ((analysisRows ?? []) as Array<{ posting_id: string | null }>)
-      .map((a) => a.posting_id)
-      .filter((id): id is string => Boolean(id)),
-  );
-  const rows = allRows.filter((r) => withAnalysis.has(r.posting_id));
-
-  if (rows.length === 0) return [];
-
-  // Join with propiedades for the rendering details.
   const propsByPosting = await fetchPropiedadesMap(rows.map((r) => r.posting_id));
 
   const out: FeedCard[] = [];
   for (const r of rows) {
     const p = propsByPosting.get(r.posting_id);
     if (!p) continue;
-    const score = r.match_score ?? computeScore(p);
-    const summary = r.report_summary?.trim() || p.description_summary?.trim() || null;
-    const highlights = r.report_highlights ?? {};
-    const card: FeedCard = {
+    // analyses.score is on a 0–10 scale; scale it to 0–100 for the card UI.
+    const score10 = r.score ?? r.report.score ?? 7;
+    const score = Math.round(score10 * 10);
+    const summary = r.report.resumen_ejecutivo?.trim() || r.report.veredicto?.trim() || null;
+    const cons = Array.isArray(r.report.inmueble?.red_flags) ? r.report.inmueble.red_flags : [];
+
+    out.push({
       id: r.id,
       imgUrl: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls[0]! : null,
       src: 'casita ia',
@@ -162,16 +129,17 @@ async function fetchAiFeed(limit: number): Promise<FeedCard[]> {
       statusKind: 'ai-report',
       statusMin: minutesAgo(r.created_at),
       sourceUrl: p.url
-        ? p.url.startsWith('http') ? p.url : `https://www.zonaprop.com.ar${p.url}`
+        ? p.url.startsWith('http')
+          ? p.url
+          : `https://www.zonaprop.com.ar${p.url}`
         : 'https://www.zonaprop.com.ar',
       summary,
-      pros: Array.isArray(highlights.pros) ? highlights.pros : [],
-      cons: Array.isArray(highlights.cons) ? highlights.cons : [],
+      pros: [],
+      cons,
       approveAction: 'feed-decide',
       feedRowId: r.id,
       matchScore: score,
-    };
-    out.push(card);
+    });
   }
   return out;
 }
@@ -189,64 +157,6 @@ async function fetchPropiedadesMap(postingIds: string[]): Promise<Map<string, Pr
   return out;
 }
 
-async function fetchMockFeed(limit: number): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('propiedades')
-    .select(SELECT)
-    .order('scraped_at', { ascending: false })
-    .limit(limit);
-
-  if (error || !data) {
-    console.error('[feed] fetchFeed failed', error);
-    return { cards: [], summary: emptySummary() };
-  }
-
-  const rows = data as PropiedadRow[];
-  const cards = rows.map((p, i) => mapMockRow(p, i));
-  const summary: FeedSummary = {
-    total: cards.length,
-    scanned: 412,
-    filtered: cards.length,
-    contacted: cards.filter((c) => c.status === 'contacted' || c.status === 'responded').length,
-    responded: cards.filter((c) => c.status === 'responded').length,
-    pending: cards.filter((c) => c.status === 'pending').length,
-    discarded: cards.filter((c) => c.status === 'discarded').length,
-    fromAI: false,
-  };
-  return { cards, summary };
-}
-
-function mapMockRow(p: PropiedadRow, i: number): FeedCard {
-  const score = computeScore(p);
-  const statusKind = STATUS_CYCLE[i % STATUS_CYCLE.length] ?? 'casita-wrote';
-  const status = mapKindToStatus(statusKind);
-  const discarded = status === 'discarded';
-
-  const summary = p.description_summary?.trim() || null;
-
-  return {
-    id: p.posting_id,
-    imgUrl: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls[0]! : null,
-    src: 'argenprop',
-    score,
-    scoreClass: score < 50 ? 'bad' : score < 70 ? 'warn' : undefined,
-    title: buildTitle(p),
-    addr: `${p.address ?? '—'} · ${p.neighborhood ?? p.city ?? 'CABA'}`,
-    price: formatPrice(p),
-    exp: formatExpenses(p),
-    specs: buildSpecs(p),
-    heart: i === 0,
-    status,
-    statusKind,
-    statusMin: 14 + ((i * 7) % 180),
-    sourceUrl: p.url ? `https://www.argenprop.com${p.url}` : 'https://www.argenprop.com',
-    summary,
-    discarded,
-    approveAction: status === 'pending' ? 'approve-detail' : status === 'discarded' ? 'force-detail' : 'detail-chat',
-  };
-}
-
 function buildSpecs(p: PropiedadRow): string[] {
   const desc = (p.description ?? '').toLowerCase();
   const features: string[] = [];
@@ -260,13 +170,6 @@ function buildSpecs(p: PropiedadRow): string[] {
   const ambStr = p.rooms ? `${p.rooms} amb` : null;
   const piso = p.bedrooms ? `${p.bedrooms}° piso` : null;
   return [m2, ambStr, piso, features[0]].filter(Boolean) as string[];
-}
-
-function mapKindToStatus(kind: FeedCard['statusKind']): CardStatus {
-  if (kind === 'responded-fed' || kind === 'mariana') return 'responded';
-  if (kind === 'pending' || kind === 'ai-report') return 'pending';
-  if (kind === 'discarded') return 'discarded';
-  return 'contacted';
 }
 
 function buildTitle(p: PropiedadRow): string {
@@ -301,18 +204,7 @@ function formatK(n: number): string {
   return new Intl.NumberFormat('es-AR').format(Math.round(n));
 }
 
-function computeScore(p: PropiedadRow): number {
-  if (!p.square_meters_area || !p.price_value) return 72;
-  const pricePerM2 = p.price_value / p.square_meters_area;
-  const base = Math.round(100 - pricePerM2 / 80);
-  return Math.max(31, Math.min(98, base));
-}
-
 function minutesAgo(iso: string): number {
   const ms = Date.now() - new Date(iso).getTime();
   return Math.max(1, Math.round(ms / 60000));
-}
-
-function emptySummary(): FeedSummary {
-  return { total: 0, scanned: 0, filtered: 0, contacted: 0, responded: 0, pending: 0, discarded: 0, fromAI: false };
 }

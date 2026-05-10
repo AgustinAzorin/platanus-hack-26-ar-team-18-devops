@@ -11,7 +11,7 @@ import {
 import {
   EMPTY_FILTERS, EMPTY_PROFILE,
   type ChatTurn, type ChatResponse, type ClientProfile, type SearchFilters,
-  type BackendSearchResponse, type SearchResultItem,
+  type BackendSearchResponse, type BackendSearchFilters, type SearchResultItem,
 } from '../../lib/search/types';
 import { composeSearchQuery } from '../../lib/search/compose-query';
 import { apiClient } from '../../lib/api-client';
@@ -207,9 +207,214 @@ function FiltersRail({
         disabled={!done || searching}
         onClick={onSearch}
       >
-        {searching ? 'Buscando…' : done ? 'Ver propiedades' : 'Seguí respondiendo…'}
+        {searching ? 'Procesando…' : done ? 'Ver proceso' : 'Seguí respondiendo…'}
       </button>
     </aside>
+  );
+}
+
+// ─── Process timeline view ────────────────────────────────────────────
+
+type StepState = 'pending' | 'active' | 'done';
+
+interface ProcessViewProps {
+  filters: SearchFilters;            // what the chat agent already extracted
+  profile: ClientProfile;            // user profile
+  query: string;                     // natural-language query sent to backend
+  serverFilters: BackendSearchFilters | null; // filters re-parsed by backend
+  resultCount: number | null;        // how many properties came back
+  metaReady: boolean;                // meta_report is in
+  notice: string | null;
+  step1: StepState;
+  step2: StepState;
+  step3: StepState;
+  onShowResults: () => void;
+  onBack: () => void;
+}
+
+function StepRow({
+  index, label, state, children,
+}: { index: number; label: string; state: StepState; children?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
+      <div style={{
+        width: 28, height: 28, flex: 'none', borderRadius: '50%',
+        display: 'grid', placeItems: 'center',
+        background: state === 'done' ? 'oklch(0.25 0.07 116 / 0.5)' : state === 'active' ? 'oklch(0.22 0.06 220 / 0.55)' : 'var(--bg-2)',
+        border: `1px solid ${state === 'done' ? 'oklch(0.55 0.17 116 / 0.55)' : 'var(--line)'}`,
+        color: state === 'done' ? 'var(--acc)' : state === 'active' ? 'var(--fg)' : 'var(--fg-3)',
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600,
+        marginTop: 2,
+      }}>
+        {state === 'done' ? '✓' : state === 'active' ? <span className="step-dot-pulse" /> : `0${index}`}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 14, fontWeight: 500, marginBottom: 6,
+          color: state === 'pending' ? 'var(--fg-3)' : 'var(--fg)',
+        }}>
+          {label}
+        </div>
+        {state !== 'pending' && children}
+      </div>
+    </div>
+  );
+}
+
+function MiniPill({ children, accent }: { children: React.ReactNode; accent?: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-block', fontSize: 11.5, padding: '3px 9px', borderRadius: 999,
+      border: `1px solid ${accent ? 'oklch(0.55 0.17 116 / 0.5)' : 'var(--line)'}`,
+      background: accent ? 'oklch(0.25 0.07 116 / 0.4)' : 'var(--bg-2)',
+      color: accent ? 'var(--acc)' : 'var(--fg-1)',
+      marginRight: 5, marginBottom: 4,
+    }}>{children}</span>
+  );
+}
+
+function ProcessView({
+  filters, profile, query, serverFilters, resultCount, metaReady, notice,
+  step1, step2, step3, onShowResults, onBack,
+}: ProcessViewProps) {
+  const allDone = step1 === 'done' && step2 === 'done' && step3 === 'done';
+
+  return (
+    <section className="search-thread thread">
+      <div className="thread-head" style={{ padding: '14px 24px', gap: 12 }}>
+        <button
+          type="button"
+          onClick={onBack}
+          className="btn btn-ghost"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+        >
+          <ArrowLeft size={14} strokeWidth={SW} />
+          Volver al chat
+        </button>
+        <div className="th-info" style={{ marginLeft: 4 }}>
+          <div className="th-name">Procesando tu búsqueda</div>
+          <div className="th-sub">PIPELINE EN VIVO · TRANSLATOR → EXECUTOR → SUMMARIZER</div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 36px' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+
+          {/* What we sent */}
+          <div style={{
+            border: '1px solid var(--line)', borderRadius: 14, padding: 16,
+            background: 'var(--bg-1)', marginBottom: 28,
+          }}>
+            <div style={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+              letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 6,
+            }}>Pedido enviado</div>
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--fg)', lineHeight: 1.5, fontStyle: 'italic' }}>
+              &ldquo;{query}&rdquo;
+            </p>
+          </div>
+
+          {/* Step 1 */}
+          <StepRow index={1} label="Interpretando tu pedido" state={step1}>
+            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+              Casita IA tradujo tu conversación a filtros estructurados.
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap' }}>
+              {filters.neighborhoods.map((z) => <MiniPill key={z} accent>{z}</MiniPill>)}
+              {filters.price_max !== null && (
+                <MiniPill>{filters.price_currency === 'USD' ? 'USD' : '$'} hasta {new Intl.NumberFormat('es-AR').format(filters.price_max)}</MiniPill>
+              )}
+              {(filters.min_rooms !== null || filters.max_rooms !== null) && (
+                <MiniPill>
+                  {filters.min_rooms === filters.max_rooms ? `${filters.min_rooms} amb` : `${filters.min_rooms ?? '?'}–${filters.max_rooms ?? '?'} amb`}
+                </MiniPill>
+              )}
+              {filters.must_have_features.map((f) => <MiniPill key={f}>{f.replace(/_/g, ' ')}</MiniPill>)}
+              {profile.has_pet === true && <MiniPill>tengo mascota</MiniPill>}
+              {profile.has_guarantor === false && <MiniPill>sin garante</MiniPill>}
+              {profile.caucion_status === 'has' && <MiniPill>tengo caución</MiniPill>}
+              {profile.caucion_status === 'can_contract' && <MiniPill>puedo sacar caución</MiniPill>}
+            </div>
+          </StepRow>
+
+          {/* Step 2 */}
+          <StepRow index={2} label="Buscando en la base de propiedades" state={step2}>
+            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+              {step2 === 'active'
+                ? 'Aplicando filtros estructurados y similitud semántica con embeddings…'
+                : serverFilters
+                ? 'Filtros aplicados por el backend (Supabase + pgvector):'
+                : '—'}
+            </div>
+            {serverFilters && step2 === 'done' && (
+              <>
+                <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap' }}>
+                  {serverFilters.neighborhoods.map((n: string) => <MiniPill key={`s-${n}`} accent>{n}</MiniPill>)}
+                  {serverFilters.price_max !== null && (
+                    <MiniPill>{serverFilters.price_currency} hasta {new Intl.NumberFormat('es-AR').format(serverFilters.price_max)}</MiniPill>
+                  )}
+                  {serverFilters.must_have_features.map((f: string) => <MiniPill key={`f-${f}`}>{f.replace(/_/g, ' ')}</MiniPill>)}
+                  {serverFilters.min_score !== null && <MiniPill>score ≥ {serverFilters.min_score}</MiniPill>}
+                  {serverFilters.free_text_query && <MiniPill>“{serverFilters.free_text_query.slice(0, 24)}…”</MiniPill>}
+                </div>
+                {resultCount !== null && (
+                  <div style={{
+                    marginTop: 10, fontSize: 13, color: 'var(--fg)', display: 'inline-flex', gap: 8, alignItems: 'baseline',
+                  }}>
+                    <strong style={{ fontSize: 24, fontFamily: '"Space Grotesk"', fontWeight: 500, color: 'var(--acc)' }}>
+                      {resultCount}
+                    </strong>
+                    propiedades coinciden
+                  </div>
+                )}
+              </>
+            )}
+          </StepRow>
+
+          {/* Step 3 */}
+          <StepRow index={3} label="Resumiendo y rankeando con IA" state={step3}>
+            <div style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+              {step3 === 'active'
+                ? 'Claude está leyendo los reportes de cada propiedad para armar el resumen…'
+                : metaReady
+                ? 'Meta-report generado: incluye top recomendaciones, trade-offs y alertas.'
+                : 'Sin meta-report (la búsqueda devolvió pocas o ninguna propiedad).'}
+            </div>
+            {step3 === 'done' && notice && (
+              <div style={{
+                marginTop: 8, fontSize: 12.5, padding: '8px 12px', borderRadius: 10,
+                background: 'oklch(0.18 0.04 60 / 0.6)', color: 'var(--warm)',
+                border: '1px solid oklch(0.5 0.12 60 / 0.4)',
+              }}>
+                <AlertTriangle size={11} strokeWidth={SW} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+                {notice}
+              </div>
+            )}
+          </StepRow>
+
+          {allDone && (
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={onShowResults}
+                disabled={resultCount === 0}
+                style={{
+                  fontSize: 13, fontWeight: 500, padding: '10px 18px',
+                  background: resultCount === 0 ? 'var(--bg-2)' : 'var(--acc)',
+                  color: resultCount === 0 ? 'var(--fg-3)' : 'var(--acc-ink)',
+                  border: 0, borderRadius: 10,
+                  cursor: resultCount === 0 ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                {resultCount === 0 ? 'Sin propiedades' : 'Ver propiedades'}
+                {resultCount !== 0 && <ArrowRight size={14} strokeWidth={2} />}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -397,16 +602,20 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS);
   const [profile, setProfile] = useState<ClientProfile>(EMPTY_PROFILE);
-  // Pills clicked since the last assistant response — sent to the LLM next turn.
-  // The historical log lives in the thread (frozen + picked pills); the rail
-  // surfaces the *resolved* state (filters / profile) instead of raw selections.
-  const pendingPillsRef = useRef<string[]>([]);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [done, setDone] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<BackendSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Process timeline state — visible after the user clicks "Ver proceso".
+  // Stages: 'idle' (chat) → 'process' (timeline) → 'results' (cards).
+  type ViewStage = 'idle' | 'process' | 'results';
+  const [viewStage, setViewStage] = useState<ViewStage>('idle');
+  const [step1, setStep1] = useState<StepState>('pending');
+  const [step2, setStep2] = useState<StepState>('pending');
+  const [step3, setStep3] = useState<StepState>('pending');
+  const [submittedQuery, setSubmittedQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -445,26 +654,23 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
       ]);
       return;
     }
-    void runTurn([{ role: 'user', content: initialQuery }], EMPTY_FILTERS);
+    void runTurn([{ role: 'user', content: initialQuery, source: 'typed' }], EMPTY_FILTERS);
   }, [initialQuery]);
 
   async function runTurn(nextMessages: UiMessage[], currentFilters: SearchFilters) {
     setMessages(nextMessages);
     setThinking(true);
     setError(null);
-    const pillsForThisTurn = pendingPillsRef.current;
-    pendingPillsRef.current = []; // consumed
     try {
-      // Strip UI-only fields before sending to the server.
-      const wireMessages: ChatTurn[] = nextMessages.map(({ role, content }) => ({ role, content }));
+      // Strip UI-only fields (suggestions, picked) but KEEP source so the
+      // backend has the complete history including pill selections.
+      const wireMessages: ChatTurn[] = nextMessages.map(({ role, content, source }) => ({
+        role, content, ...(source ? { source } : {}),
+      }));
       const res = await fetch('/api/search/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: wireMessages,
-          filters: currentFilters,
-          selected_pills: pillsForThisTurn,
-        }),
+        body: JSON.stringify({ messages: wireMessages, filters: currentFilters }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -479,8 +685,6 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
         { role: 'assistant', content: data.message, suggestions: data.suggestions ?? [] },
       ]);
     } catch (err) {
-      // If the request failed, restore the pending pills so the user doesn't lose them.
-      pendingPillsRef.current = [...pillsForThisTurn, ...pendingPillsRef.current];
       setError(err instanceof Error ? err.message : 'Error en el agente');
     } finally {
       setThinking(false);
@@ -492,41 +696,91 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     const text = draft.trim();
     if (!text || thinking) return;
     setDraft('');
-    await runTurn([...messages, { role: 'user', content: text }], filters);
+    await runTurn([...messages, { role: 'user', content: text, source: 'typed' }], filters);
   }
 
   /**
-   * Pill click: don't add to `messages` (the thread) as a user turn. Instead:
-   *   1. Mark the pill as `picked` on the last assistant message so the UI can
-   *      keep all pills visible but greyed out (with the chosen one accented).
-   *   2. Push the pill to the rail ("Tus elecciones") and the pending buffer.
-   *   3. Trigger a turn now so the assistant reacts to the selection.
+   * Pill click: append a `pill` user turn to messages so the agent has the
+   * full conversation history (otherwise it re-asks questions). The thread
+   * filters these out for rendering — only the "picked" highlight is shown
+   * on the previous assistant's pill list.
    */
   function handleSuggestion(text: string) {
     if (thinking) return;
-    pendingPillsRef.current = [...pendingPillsRef.current, text];
-    const withPicked = messages.map((m, i) =>
+    const withPicked: UiMessage[] = messages.map((m, i) =>
       i === messages.length - 1 && m.role === 'assistant' ? { ...m, picked: text } : m,
     );
-    void runTurn(withPicked, filters);
+    void runTurn(
+      [...withPicked, { role: 'user', content: text, source: 'pill' }],
+      filters,
+    );
   }
 
   async function handleSearch() {
     setSearching(true);
     setSearchError(null);
+    setSearchResults(null);
+    setStep1('active');
+    setStep2('pending');
+    setStep3('pending');
+
+    const query = composeSearchQuery(filters, profile);
+    setSubmittedQuery(query);
+    setViewStage('process');
+
+    // Theatrical staging: each step is `active` for ~700ms before flipping
+    // to `done`, so the user sees the pipeline progress even though the
+    // backend is one round-trip. Real data arrives mid-way.
+    const minStageMs = 700;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
     try {
-      const query = composeSearchQuery(filters, profile);
-      const response = await apiClient.search.query(query);
+      // Step 1: interpreting (we already have filters/profile from the chat).
+      await wait(minStageMs);
+      setStep1('done');
+      setStep2('active');
+
+      // Step 2 + 3 happen in one POST. Wait the actual fetch but enforce a
+      // minimum visible duration for step 2.
+      const fetchPromise = apiClient.search.query(query);
+      await wait(minStageMs);
+      const response = await fetchPromise;
       setSearchResults(response);
+      setStep2('done');
+      setStep3('active');
+      await wait(minStageMs);
+      setStep3('done');
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'No pudimos hacer la búsqueda');
+      setStep1((s) => (s === 'active' ? 'pending' : s));
+      setStep2((s) => (s === 'active' ? 'pending' : s));
+      setStep3((s) => (s === 'active' ? 'pending' : s));
     } finally {
       setSearching(false);
     }
   }
 
+  function handleShowResults() {
+    setViewStage('results');
+  }
+
+  function handleBackToChat() {
+    setViewStage('idle');
+    setSearchResults(null);
+    setSearchError(null);
+    setStep1('pending');
+    setStep2('pending');
+    setStep3('pending');
+  }
+
   // `messages` is already typed-only (pill clicks aren't added there). Render direct.
-  const visibleMessages = messages;
+  // The thread shows assistant turns + only typed-user turns. Pill clicks live
+  // in `messages` (so the agent sees them) but are surfaced via the highlighted
+  // pill on the assistant message that prompted them — not as user bubbles.
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => m.role !== 'user' || m.source !== 'pill'),
+    [messages],
+  );
 
   if (!mounted) return <div className="app" />;
 
@@ -537,8 +791,23 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
         <Topbar done={done} />
         <main className="search">
 
-          {searchResults ? (
-            <ResultsView results={searchResults} onBack={() => setSearchResults(null)} />
+          {viewStage === 'results' && searchResults ? (
+            <ResultsView results={searchResults} onBack={handleBackToChat} />
+          ) : viewStage === 'process' ? (
+            <ProcessView
+              filters={filters}
+              profile={profile}
+              query={submittedQuery}
+              serverFilters={searchResults?.filters ?? null}
+              resultCount={searchResults?.results.length ?? null}
+              metaReady={!!searchResults?.meta_report}
+              notice={searchResults?.notice ?? null}
+              step1={step1}
+              step2={step2}
+              step3={step3}
+              onShowResults={handleShowResults}
+              onBack={handleBackToChat}
+            />
           ) : (
           <section className="search-thread thread">
             <div className="thread-head" style={{ padding: '14px 24px' }}>

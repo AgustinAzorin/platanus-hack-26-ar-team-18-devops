@@ -23,6 +23,13 @@ export const EMPTY_FILTERS: SearchFilters = {
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
+  /**
+   * For user turns: how the content was produced. The agent treats both as
+   * regular user input (it MUST see pill clicks in the conversation history,
+   * otherwise it re-asks questions the user already answered). The UI uses
+   * this flag to filter pill turns out of the visible thread.
+   */
+  source?: 'typed' | 'pill';
 }
 
 export type CaucionStatus = 'has' | 'can_contract' | 'no';
@@ -51,9 +58,8 @@ export const EMPTY_PROFILE: ClientProfile = {
 export type ProfileUpdates = Partial<ClientProfile>;
 
 export interface ChatRequest {
-  messages: ChatTurn[];           // typed user + assistant turns only (what the user "said")
+  messages: ChatTurn[];           // full conversation, including pill clicks (so the agent sees history)
   filters: SearchFilters;         // running collected filters
-  selected_pills?: string[];      // pills clicked since the last assistant response
 }
 
 export interface ChatResponse {
