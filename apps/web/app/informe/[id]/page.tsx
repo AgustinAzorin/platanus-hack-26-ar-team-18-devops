@@ -24,6 +24,7 @@ interface PropiedadRow {
   parking: number | null;
   description: string | null;
   description_summary: string | null;
+  seller_whatsapp_digits: string | null;
 }
 
 interface AnalysisRow {
@@ -55,7 +56,7 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
   const { data: propData, error: propError } = await supabase
     .from('propiedades')
     .select(
-      'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary',
+      'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary, seller_whatsapp_digits',
     )
     .eq('posting_id', analysisRow.posting_id)
     .single();
@@ -95,6 +96,7 @@ export default async function InformePage({ params }: { params: Promise<{ id: st
         image_urls: Array.isArray(prop.image_urls) ? prop.image_urls : [],
         description_summary: prop.description_summary ?? prop.description ?? null,
         zonapropUrl,
+        seller_whatsapp_digits: prop.seller_whatsapp_digits,
       }}
     />
   );
