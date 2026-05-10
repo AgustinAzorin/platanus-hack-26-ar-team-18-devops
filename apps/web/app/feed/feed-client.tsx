@@ -244,30 +244,21 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
                           {c.specs.map((s, j) => <span key={j}>{s}</span>)}
                         </div>
                         {c.summary && (
-                          <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>
+                          <p
+                            style={{
+                              margin: '6px 0 0',
+                              fontSize: 12.5,
+                              color: 'var(--fg-2)',
+                              lineHeight: 1.45,
+                              display: '-webkit-box',
+                              WebkitBoxOrient: 'vertical',
+                              WebkitLineClamp: 2,
+                              overflow: 'hidden',
+                            }}
+                          >
                             {c.summary}
                           </p>
                         )}
-                        {(c.pros && c.pros.length > 0) || (c.cons && c.cons.length > 0) ? (
-                          <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11.5 }}>
-                            {c.pros && c.pros.length > 0 && (
-                              <div style={{ flex: 1 }}>
-                                <div style={{ color: 'var(--pos)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A favor</div>
-                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
-                                  {c.pros.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                            {c.cons && c.cons.length > 0 && (
-                              <div style={{ flex: 1 }}>
-                                <div style={{ color: 'var(--warm)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A tener en cuenta</div>
-                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
-                                  {c.cons.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
 
                         {isBelowThreshold ? (
                           <div className="status-row discarded">
