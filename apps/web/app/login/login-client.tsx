@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 
+import CasitaLogo from '../../components/casita-logo';
 import { signIn, signUp, type AuthState } from './actions';
 
 const INITIAL: AuthState = {};
@@ -19,10 +20,9 @@ export default function LoginClient({ next }: LoginClientProps) {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--fg)', display: 'grid', placeItems: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 36 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10, background: 'var(--acc)', color: 'var(--acc-ink)',
-            display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18,
-          }}>c.</div>
+          <div className="login-brand-mark">
+            <CasitaLogo size={42} />
+          </div>
           <div style={{ fontSize: 18, fontWeight: 500 }}>casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
         </div>
 

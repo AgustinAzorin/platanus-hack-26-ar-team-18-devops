@@ -9,6 +9,7 @@ import {
 
 import { createClient as createBrowserSupabase } from '../lib/supabase/client';
 import { signOut } from '../app/login/actions';
+import CasitaLogo from './casita-logo';
 
 const SW = 1.6;
 
@@ -129,7 +130,9 @@ export default function AppSidebar({ initialCounts }: AppSidebarProps) {
           }
         }}
       >
-        <div className="mark">c.</div>
+        <div className="mark">
+          <CasitaLogo size={34} />
+        </div>
         <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
         <div className="meta">v0.4</div>
       </Link>

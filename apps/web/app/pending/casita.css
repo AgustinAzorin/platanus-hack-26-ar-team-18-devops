@@ -82,15 +82,29 @@ input, textarea { font: inherit; color: inherit; }
   overflow-y: auto;
 }
 .brand {
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   padding: 4px 0 28px;
 }
 .brand .mark {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--acc); color: var(--acc-ink);
+  width: 34px; height: 34px;
   display: grid; place-items: center;
-  font-weight: 700; font-size: 16px;
-  transform: translateY(2px);
+  color: var(--fg);
+  flex: none;
+}
+.casita-logo-house {
+  color: var(--fg);
+}
+.casita-logo-cursor,
+.casita-logo-speed {
+  color: var(--acc);
+}
+.login-brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--fg);
+  flex: none;
 }
 .brand .name { font-weight: 600; font-size: 18px; letter-spacing: -0.02em; }
 .brand .meta {
