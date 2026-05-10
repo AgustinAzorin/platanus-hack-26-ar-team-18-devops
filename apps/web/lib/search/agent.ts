@@ -25,13 +25,14 @@ Filtros de búsqueda
 2. price_max: presupuesto mensual máximo (ARS por default; aclará USD si menciona dólares).
 3. min_rooms / max_rooms: cantidad de ambientes.
 4. must_have_features: pet_friendly, balcony, luminoso, garage, amoblado, sin_garante_propietario, subte_b, gym, lavadero. UNA prioridad.
-5. move_in_date: fecha aproximada (hoy es 2026-05-09).
 
 Perfil del cliente (preguntar solo si no está en [user_profile_so_far])
-6. has_pet: ¿tenés mascota? Si sí, también pet_details (ej "perro chico, golden").
-7. has_real_estate: ¿tenés alguna propiedad propia? Si sí, real_estate_location (ciudad/barrio/zona).
-8. has_guarantor: ¿tenés garante? Si sí, guarantor_details opcional.
-9. caucion_status: ¿tenés seguro de caución? Tres respuestas posibles: "has" (ya tiene), "can_contract" (no tiene pero puede contratar), "no" (no tiene ni puede).
+5. has_pet: ¿tenés mascota? Si sí, también pet_details (ej "perro chico, golden").
+6. has_real_estate: ¿tenés alguna propiedad propia? Si sí, real_estate_location (ciudad/barrio/zona).
+7. has_guarantor: ¿tenés garante? Si sí, guarantor_details opcional.
+8. caucion_status: ¿tenés seguro de caución? Tres respuestas posibles: "has" (ya tiene), "can_contract" (no tiene pero puede contratar), "no" (no tiene ni puede).
+
+NUNCA preguntes por fecha de mudanza/move_in_date. Si el usuario la menciona espontáneamente, extraela; si no, dejala null.
 
 **EXTRACCIÓN AGRESIVA**: leé el último mensaje y extraé TODO lo extraíble. Si dice "tengo perro chico" → has_pet=true, pet_details="perro chico" + must_have_features += ["pet_friendly"]. Si dice "tengo un depto en Córdoba" → has_real_estate=true, real_estate_location="Córdoba". Si dice "no tengo garante pero puedo sacar caución" → has_guarantor=false, caucion_status="can_contract".
 
@@ -112,6 +113,12 @@ interface AgentInput {
   messages: ChatTurn[];
   filters: SearchFilters;
   profile: ClientProfile;
+  /**
+   * Pills the user clicked since the last assistant turn. They are NOT in
+   * `messages` (the UI keeps the thread clean of pill clicks); we synthesize
+   * them into a user turn here so the LLM sees the choices.
+   */
+  selectedPills: string[];
 }
 
 interface AgentOutput {
@@ -122,17 +129,35 @@ interface AgentOutput {
   suggestions: string[];
 }
 
-export async function runChatTurn({ messages, filters, profile }: AgentInput): Promise<AgentOutput> {
+export async function runChatTurn({ messages, filters, profile, selectedPills }: AgentInput): Promise<AgentOutput> {
+  const augmented: ChatTurn[] = [...messages];
+
+  // If the user clicked pills since the last assistant turn, attach them as a
+  // pill-selection annotation. If the last turn is `user` (the user typed AND
+  // clicked), append to that turn. Otherwise (only pills, no text) synthesize a
+  // user turn so the API alternation is preserved.
+  if (selectedPills.length > 0) {
+    const pillsBlock = `[user_selected_pills]\n${selectedPills.map((p) => `- ${p}`).join('\n')}`;
+    const last = augmented[augmented.length - 1];
+    if (last && last.role === 'user') {
+      augmented[augmented.length - 1] = { ...last, content: `${last.content}\n\n${pillsBlock}` };
+    } else {
+      augmented.push({ role: 'user', content: pillsBlock });
+    }
+  }
+
   // Inject the running filters AND profile into the latest user turn.
-  const augmented = [...messages];
   if (augmented.length > 0) {
-    augmented[augmented.length - 1] = {
-      ...augmented[augmented.length - 1]!,
-      content:
-        `${augmented[augmented.length - 1]!.content}\n\n` +
-        `[filters_so_far]\n${JSON.stringify(filters)}\n\n` +
-        `[user_profile_so_far]\n${JSON.stringify(profile)}`,
-    };
+    const last = augmented[augmented.length - 1]!;
+    if (last.role === 'user') {
+      augmented[augmented.length - 1] = {
+        ...last,
+        content:
+          `${last.content}\n\n` +
+          `[filters_so_far]\n${JSON.stringify(filters)}\n\n` +
+          `[user_profile_so_far]\n${JSON.stringify(profile)}`,
+      };
+    }
   }
 
   const res = await getClient().messages.create({

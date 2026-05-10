@@ -102,7 +102,7 @@ function buildDetails(p: PropiedadRow): string {
   const m2 = p.square_meters_area ? `${Math.round(p.square_meters_area)}m²` : null;
   const price = p.price_value
     ? `${p.price_type === 'USD' ? 'USD ' : '$'}${formatNumber(p.price_value)}`
-    : null;
+    : 'Consultar con el vendedor';
   return [m2, price].filter(Boolean).join(' · ');
 }
 

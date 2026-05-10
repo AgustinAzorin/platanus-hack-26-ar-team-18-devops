@@ -182,7 +182,7 @@ function Report({ result }: { result: AnalyzePropertyResponse }) {
 
 function PropertyCard({ property }: { property: PropertyData }) {
   const formatPrice = (value: number | null, type: string | null) => {
-    if (value === null) return 'Precio no disponible';
+    if (value === null) return 'Consultar con el vendedor';
     const currency = type === 'USD' ? 'USD' : '$';
     return `${currency} ${value.toLocaleString('es-AR')}`;
   };

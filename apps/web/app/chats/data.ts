@@ -33,7 +33,6 @@ export async function fetchFeaturedProperty(): Promise<FeaturedProperty | null> 
     .from('propiedades')
     .select(SELECT)
     .not('image_urls', 'is', null)
-    .not('price_value', 'is', null)
     .order('scraped_at', { ascending: false })
     .limit(1);
 
@@ -59,7 +58,7 @@ export async function fetchFeaturedProperty(): Promise<FeaturedProperty | null> 
 }
 
 function formatPrice(p: PropiedadRow): string {
-  if (!p.price_value) return '—';
+  if (!p.price_value) return 'Consultar con el vendedor';
   const symbol = p.price_type === 'USD' ? 'USD' : '$';
   return `${symbol} ${new Intl.NumberFormat('es-AR').format(Math.round(p.price_value))}`;
 }
