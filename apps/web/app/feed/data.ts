@@ -1,4 +1,6 @@
+import { getCurrentClientUserId } from '../../lib/search/profile';
 import { createClient } from '../../lib/supabase/server';
+import { createServiceClient } from '../../lib/supabase/service';
 
 export type CardStatus = 'contacted' | 'responded' | 'discarded' | 'pending';
 
@@ -15,12 +17,16 @@ export interface FeedCard {
   specs: string[];
   heart?: boolean;
   status: CardStatus;
-  statusKind: 'responded-fed' | 'casita-wrote' | 'pending' | 'casita-called' | 'mariana' | 'discarded' | 'casita-no-response';
+  statusKind: 'responded-fed' | 'casita-wrote' | 'pending' | 'casita-called' | 'mariana' | 'discarded' | 'casita-no-response' | 'ai-report';
   statusMin: number; // for "hace X min"
   sourceUrl: string;
   summary: string | null;
+  pros?: string[];
+  cons?: string[];
   discarded?: boolean;
-  approveAction: 'detail-chat' | 'approve-detail' | 'force-detail';
+  approveAction: 'detail-chat' | 'approve-detail' | 'force-detail' | 'feed-decide';
+  feedRowId?: string;     // present when this card came from feed_results — needed by accept/reject
+  matchScore?: number;    // 0..100 from feed_results
 }
 
 export interface FeedSummary {
@@ -31,6 +37,7 @@ export interface FeedSummary {
   responded: number;
   pending: number;
   discarded: number;
+  fromAI: boolean;
 }
 
 interface PropiedadRow {
@@ -52,6 +59,15 @@ interface PropiedadRow {
   description_summary?: string | null;
 }
 
+interface FeedResultRow {
+  id: string;
+  posting_id: string;
+  match_score: number | null;
+  report_summary: string | null;
+  report_highlights: { pros?: string[]; cons?: string[] } | null;
+  created_at: string;
+}
+
 const SELECT =
   'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary';
 
@@ -68,6 +84,93 @@ const STATUS_CYCLE: Array<FeedCard['statusKind']> = [
 ];
 
 export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
+  const aiCards = await fetchAiFeed(limit);
+  if (aiCards.length > 0) {
+    const summary: FeedSummary = {
+      total: aiCards.length,
+      scanned: aiCards.length,
+      filtered: aiCards.length,
+      contacted: 0,
+      responded: 0,
+      pending: aiCards.length,
+      discarded: 0,
+      fromAI: true,
+    };
+    return { cards: aiCards, summary };
+  }
+  return fetchMockFeed(limit);
+}
+
+async function fetchAiFeed(limit: number): Promise<FeedCard[]> {
+  const userId = await getCurrentClientUserId();
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('feed_results')
+    .select('id, posting_id, match_score, report_summary, report_highlights, created_at')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('match_score', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error || !data || data.length === 0) {
+    if (error) console.warn('[feed] feed_results query failed (table may not exist yet):', error.message);
+    return [];
+  }
+  const rows = data as FeedResultRow[];
+
+  // Join with propiedades for the rendering details.
+  const propsByPosting = await fetchPropiedadesMap(rows.map((r) => r.posting_id));
+
+  const out: FeedCard[] = [];
+  for (const r of rows) {
+    const p = propsByPosting.get(r.posting_id);
+    if (!p) continue;
+    const score = r.match_score ?? computeScore(p);
+    const summary = r.report_summary?.trim() || p.description_summary?.trim() || null;
+    const highlights = r.report_highlights ?? {};
+    const card: FeedCard = {
+      id: r.id,
+      imgUrl: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls[0]! : null,
+      src: 'casita ia',
+      score,
+      scoreClass: score < 50 ? 'bad' : score < 70 ? 'warn' : undefined,
+      title: buildTitle(p),
+      addr: `${p.address ?? '—'} · ${p.neighborhood ?? p.city ?? 'CABA'}`,
+      price: formatPrice(p),
+      exp: formatExpenses(p),
+      specs: buildSpecs(p),
+      heart: false,
+      status: 'pending',
+      statusKind: 'ai-report',
+      statusMin: minutesAgo(r.created_at),
+      sourceUrl: p.url ? `https://www.argenprop.com${p.url}` : 'https://www.argenprop.com',
+      summary,
+      pros: Array.isArray(highlights.pros) ? highlights.pros : [],
+      cons: Array.isArray(highlights.cons) ? highlights.cons : [],
+      approveAction: 'feed-decide',
+      feedRowId: r.id,
+      matchScore: score,
+    };
+    out.push(card);
+  }
+  return out;
+}
+
+async function fetchPropiedadesMap(postingIds: string[]): Promise<Map<string, PropiedadRow>> {
+  if (postingIds.length === 0) return new Map();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('propiedades')
+    .select(SELECT)
+    .in('posting_id', postingIds);
+  if (error || !data) return new Map();
+  const out = new Map<string, PropiedadRow>();
+  for (const row of data as PropiedadRow[]) out.set(row.posting_id, row);
+  return out;
+}
+
+async function fetchMockFeed(limit: number): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('propiedades')
@@ -81,7 +184,7 @@ export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summar
   }
 
   const rows = data as PropiedadRow[];
-  const cards = rows.map((p, i) => mapRow(p, i));
+  const cards = rows.map((p, i) => mapMockRow(p, i));
   const summary: FeedSummary = {
     total: cards.length,
     scanned: 412,
@@ -90,29 +193,18 @@ export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summar
     responded: cards.filter((c) => c.status === 'responded').length,
     pending: cards.filter((c) => c.status === 'pending').length,
     discarded: cards.filter((c) => c.status === 'discarded').length,
+    fromAI: false,
   };
   return { cards, summary };
 }
 
-function mapRow(p: PropiedadRow, i: number): FeedCard {
+function mapMockRow(p: PropiedadRow, i: number): FeedCard {
   const score = computeScore(p);
   const statusKind = STATUS_CYCLE[i % STATUS_CYCLE.length] ?? 'casita-wrote';
   const status = mapKindToStatus(statusKind);
   const discarded = status === 'discarded';
 
   const summary = p.description_summary?.trim() || null;
-  const desc = (p.description ?? '').toLowerCase();
-  const features: string[] = [];
-  if (p.parking && p.parking > 0) features.push('cochera');
-  else if (desc.includes('terraza')) features.push('terraza');
-  else if (desc.includes('balcón') || desc.includes('balcon')) features.push('balcón');
-  else if (desc.includes('patio')) features.push('patio');
-  else if (desc.includes('luminos')) features.push('luminoso');
-
-  const m2 = p.square_meters_area ? `${Math.round(p.square_meters_area)} m²` : null;
-  const ambStr = p.rooms ? `${p.rooms} amb` : null;
-  const piso = p.bedrooms ? `${p.bedrooms}° piso` : null;
-  const specs = [m2, ambStr, piso, features[0]].filter(Boolean) as string[];
 
   return {
     id: p.posting_id,
@@ -124,7 +216,7 @@ function mapRow(p: PropiedadRow, i: number): FeedCard {
     addr: `${p.address ?? '—'} · ${p.neighborhood ?? p.city ?? 'CABA'}`,
     price: formatPrice(p),
     exp: formatExpenses(p),
-    specs,
+    specs: buildSpecs(p),
     heart: i === 0,
     status,
     statusKind,
@@ -136,9 +228,24 @@ function mapRow(p: PropiedadRow, i: number): FeedCard {
   };
 }
 
+function buildSpecs(p: PropiedadRow): string[] {
+  const desc = (p.description ?? '').toLowerCase();
+  const features: string[] = [];
+  if (p.parking && p.parking > 0) features.push('cochera');
+  else if (desc.includes('terraza')) features.push('terraza');
+  else if (desc.includes('balcón') || desc.includes('balcon')) features.push('balcón');
+  else if (desc.includes('patio')) features.push('patio');
+  else if (desc.includes('luminos')) features.push('luminoso');
+
+  const m2 = p.square_meters_area ? `${Math.round(p.square_meters_area)} m²` : null;
+  const ambStr = p.rooms ? `${p.rooms} amb` : null;
+  const piso = p.bedrooms ? `${p.bedrooms}° piso` : null;
+  return [m2, ambStr, piso, features[0]].filter(Boolean) as string[];
+}
+
 function mapKindToStatus(kind: FeedCard['statusKind']): CardStatus {
   if (kind === 'responded-fed' || kind === 'mariana') return 'responded';
-  if (kind === 'pending') return 'pending';
+  if (kind === 'pending' || kind === 'ai-report') return 'pending';
   if (kind === 'discarded') return 'discarded';
   return 'contacted';
 }
@@ -182,6 +289,11 @@ function computeScore(p: PropiedadRow): number {
   return Math.max(31, Math.min(98, base));
 }
 
+function minutesAgo(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(1, Math.round(ms / 60000));
+}
+
 function emptySummary(): FeedSummary {
-  return { total: 0, scanned: 0, filtered: 0, contacted: 0, responded: 0, pending: 0, discarded: 0 };
+  return { total: 0, scanned: 0, filtered: 0, contacted: 0, responded: 0, pending: 0, discarded: 0, fromAI: false };
 }

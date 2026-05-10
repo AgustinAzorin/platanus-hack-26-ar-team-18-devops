@@ -93,6 +93,35 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
         Relationships: [];
       };
+      feed_results: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          search_id: string;
+          posting_id: string;
+          filters: Record<string, unknown>;
+          match_score: number | null;
+          report_summary: string | null;
+          report_highlights: Record<string, unknown> | null;
+          status: 'pending' | 'accepted' | 'rejected';
+          decided_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          search_id: string;
+          posting_id: string;
+          filters: Record<string, unknown>;
+          match_score?: number | null;
+          report_summary?: string | null;
+          report_highlights?: Record<string, unknown> | null;
+          status?: 'pending' | 'accepted' | 'rejected';
+          decided_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['feed_results']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
