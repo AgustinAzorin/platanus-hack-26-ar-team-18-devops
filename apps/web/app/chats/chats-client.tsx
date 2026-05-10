@@ -321,19 +321,18 @@ export default function ChatsClient({
   }
 
   useEffect(() => {
-    initAnimations();
+    const ctx = gsap.context(() => {
+      gsap.defaults({ ease: 'power3.out' });
+
+      gsap.from('.side',   { x: -24, autoAlpha: 0, duration: 1.0 });
+      gsap.from('.topbar', { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.12 });
+      gsap.from('.convo', { x: -20, autoAlpha: 0, duration: 0.65, ease: 'power2.out', stagger: 0.06, delay: 0.28 });
+      gsap.from('.thread-head', { autoAlpha: 0, y: -10, duration: 0.7, delay: 0.4 });
+      gsap.from('.msg', { y: 18, autoAlpha: 0, duration: 0.55, ease: 'power2.out', stagger: 0.07, delay: 0.55 });
+      gsap.from('.ctx', { x: 32, autoAlpha: 0, duration: 0.85, ease: 'power2.out', delay: 0.35 });
+    });
+    return () => ctx.revert();
   }, []);
-
-  function initAnimations() {
-    gsap.defaults({ ease: 'power3.out' });
-
-    gsap.from('.side',   { x: -24, autoAlpha: 0, duration: 1.0 });
-    gsap.from('.topbar', { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.12 });
-    gsap.from('.convo', { x: -20, autoAlpha: 0, duration: 0.65, ease: 'power2.out', stagger: 0.06, delay: 0.28 });
-    gsap.from('.thread-head', { autoAlpha: 0, y: -10, duration: 0.7, delay: 0.4 });
-    gsap.from('.msg', { y: 18, autoAlpha: 0, duration: 0.55, ease: 'power2.out', stagger: 0.07, delay: 0.55 });
-    gsap.from('.ctx', { x: 32, autoAlpha: 0, duration: 0.85, ease: 'power2.out', delay: 0.35 });
-  }
 
   async function handleSend() {
     if (!activeChatId || !draft.trim() || sending) return;
