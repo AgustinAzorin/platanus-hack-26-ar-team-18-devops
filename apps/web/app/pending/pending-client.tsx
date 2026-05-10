@@ -4,83 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import {
-  Search, Layers, MessageSquare, Bell, BarChart2, Wand2,
-  ExternalLink, Check, X,
-} from 'lucide-react';
+import { ExternalLink, Check, X } from 'lucide-react';
 
 import type { CardData } from './data';
+import AppSidebar from '../../components/app-sidebar';
 
 gsap.registerPlugin(Flip);
 
 const SW = 1.6;
-
-const icons = {
-  search: <Search        size={16} strokeWidth={SW} />,
-  stack:  <Layers        size={16} strokeWidth={SW} />,
-  chat:   <MessageSquare size={16} strokeWidth={SW} />,
-  bell:   <Bell          size={16} strokeWidth={SW} />,
-  spark:  <BarChart2     size={16} strokeWidth={SW} />,
-  wand:   <Wand2         size={16} strokeWidth={SW} />,
-};
-
-const navItems = [
-  { id: 'home',       href: '/home',       label: 'Buscar',         ico: 'search', group: 'principal' },
-  { id: 'feed',       href: '/feed',       label: 'Encontrados',    ico: 'stack',  badge: '24', group: 'principal' },
-  { id: 'chats',      href: '/chats',      label: 'Conversaciones', ico: 'chat',   badge: '8',  group: 'principal' },
-  { id: 'pending',    href: '/pending',    label: 'Pendientes',     ico: 'bell',   badge: '3',  urgent: true, group: 'principal' },
-  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',       ico: 'spark',  group: 'operación' },
-  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',  ico: 'wand',   group: 'operación' },
-] as const;
-
-function Sidebar() {
-  const groups = navItems.reduce<Record<string, typeof navItems[number][]>>((acc, item) => {
-    (acc[item.group] ??= []).push(item);
-    return acc;
-  }, {});
-
-  return (
-    <aside className="side">
-      <div className="brand">
-        <div className="mark">c.</div>
-        <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
-        <div className="meta">v0.4</div>
-      </div>
-
-      {Object.entries(groups).map(([group, items]) => (
-        <div key={group}>
-          <div className="group-label">{group}</div>
-          <div className="nav">
-            {items.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                className={`${item.id === 'pending' ? 'active' : ''} ${'urgent' in item && item.urgent ? 'urgent' : ''}`}
-              >
-                <span className="ico">{icons[item.ico as keyof typeof icons]}</span>
-                <span>{item.label}</span>
-                {'badge' in item && item.badge && (
-                  <span className="badge">{item.badge}</span>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      <div className="side-foot">
-        <div className="user">
-          <div className="avatar">M</div>
-          <div className="who">
-            Martina Ríos
-            <small>Plan agente · BA</small>
-          </div>
-          <div className="status" title="Bot activo" />
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 function Topbar({ count }: { count: number }) {
   return (
@@ -114,6 +45,29 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const [cards, setCards] = useState<CardData[]>(initialCards);
   const [busy,  setBusy ] = useState(false);
   const dragRef = useRef({ startX: 0, active: false });
+  const noBtnRef = useRef<HTMLButtonElement>(null);
+  const siBtnRef = useRef<HTMLButtonElement>(null);
+
+  function setBtnIntensity(btn: HTMLButtonElement | null, intensity: number) {
+    if (!btn) return;
+    const t = Math.max(0, Math.min(1, intensity));
+    gsap.to(btn, {
+      scale: 1 + 0.18 * t,
+      duration: t > 0.4 ? 0.18 : 0.34,
+      ease: t > 0.4 ? 'back.out(2)' : 'power2.out',
+      overwrite: 'auto',
+    });
+    if (t > 0.35) btn.classList.add('is-hot');
+    else btn.classList.remove('is-hot');
+  }
+
+  function bounceBtn(btn: HTMLButtonElement | null) {
+    if (!btn) return;
+    gsap.timeline({ overwrite: 'auto' })
+      .to(btn, { scale: 0.88, duration: 0.08, ease: 'power2.in' })
+      .to(btn, { scale: 1.22, duration: 0.18, ease: 'back.out(2.4)' })
+      .to(btn, { scale: 1,    duration: 0.22, ease: 'power2.out' });
+  }
 
   useEffect(() => {
     gsap.defaults({ ease: 'power3.out' });
@@ -133,6 +87,9 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
     if (!dragRef.current.active) return;
     const dx = e.clientX - dragRef.current.startX;
     gsap.set(e.currentTarget, { x: dx, rotation: dx * 0.07, transformOrigin: 'bottom center' });
+    const t = Math.min(1, Math.abs(dx) / 100);
+    setBtnIntensity(siBtnRef.current, dx > 0 ? t : 0);
+    setBtnIntensity(noBtnRef.current, dx < 0 ? t : 0);
   }
 
   function onDragEnd(e: React.PointerEvent<HTMLDivElement>) {
@@ -141,9 +98,13 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
     const dx = e.clientX - dragRef.current.startX;
     if (Math.abs(dx) > 80) {
       gsap.set(e.currentTarget, { x: 0, rotation: 0 });
+      bounceBtn(dx > 0 ? siBtnRef.current : noBtnRef.current);
+      setBtnIntensity(dx > 0 ? noBtnRef.current : siBtnRef.current, 0);
       handleAction(dx > 0 ? 'si' : 'no');
     } else {
       gsap.to(e.currentTarget, { x: 0, rotation: 0, duration: 0.45, ease: 'back.out(1.7)' });
+      setBtnIntensity(siBtnRef.current, 0);
+      setBtnIntensity(noBtnRef.current, 0);
     }
   }
 
@@ -189,7 +150,7 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
 
   return (
     <div className="app">
-      <Sidebar />
+      <AppSidebar />
 
       <div>
         <Topbar count={cards.length} />
@@ -206,75 +167,77 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
             ) : (
               <>
                 <div className="sw-main">
-                  {/* Card stack */}
-                  <div
-                    className="sw-stack"
-                    style={{ width: CARD_W + totalOff, height: CARD_H }}
-                  >
-                    {reversed.map((card, domIndex) => {
-                      const off    = domIndex * CARD_OFF;
-                      const isFront = card.id === front?.id;
-                      return (
+                {/* Card stack */}
+                <div
+                  className="sw-stack"
+                  style={{ width: CARD_W + totalOff, height: CARD_H }}
+                >
+                  {reversed.map((card, domIndex) => {
+                    const off    = domIndex * CARD_OFF;
+                    const isFront = card.id === front?.id;
+                    return (
+                      <div
+                        key={card.id}
+                        className={[
+                          'sw-card',
+                          isFront ? 'sw-front' : '',
+                          card.urgent ? 'sw-urgent' : '',
+                        ].join(' ')}
+                        style={{
+                          width:    CARD_W,
+                          height:   CARD_H,
+                          left:     off,
+                          top:      -off,
+                          zIndex:   domIndex + 1,
+                          position: 'absolute',
+                          cursor:   isFront ? 'grab' : undefined,
+                          userSelect: 'none',
+                        }}
+                        {...(isFront ? {
+                          onPointerDown: onDragStart,
+                          onPointerMove: onDragMove,
+                          onPointerUp:   onDragEnd,
+                          onPointerCancel: onDragEnd,
+                        } : {})}
+                      >
+                        {/* Full-portrait image with gradient overlay */}
                         <div
-                          key={card.id}
-                          className={[
-                            'sw-card',
-                            isFront ? 'sw-front' : '',
-                            card.urgent ? 'sw-urgent' : '',
-                          ].join(' ')}
-                          style={{
-                            width:    CARD_W,
-                            height:   CARD_H,
-                            left:     off,
-                            top:      -off,
-                            zIndex:   domIndex + 1,
-                            position: 'absolute',
-                            cursor:   isFront ? 'grab' : undefined,
-                            userSelect: 'none',
-                          }}
-                          {...(isFront ? {
-                            onPointerDown: onDragStart,
-                            onPointerMove: onDragMove,
-                            onPointerUp:   onDragEnd,
-                            onPointerCancel: onDragEnd,
-                          } : {})}
+                          className={`sw-img${card.imgUrl ? ' sw-img-photo' : ''}`}
+                          style={card.imgUrl ? { backgroundImage: `url("${card.imgUrl}")` } : undefined}
                         >
-                          {/* Full-portrait image with gradient overlay */}
-                          <div
-                            className={`sw-img${card.imgUrl ? ' sw-img-photo' : ''}`}
-                            style={card.imgUrl ? { backgroundImage: `url("${card.imgUrl}")` } : undefined}
-                          >
-                            <span className="sw-source">{card.source}</span>
-                            <span className={`sw-score${card.scoreWarm ? ' sw-score-warm' : ''}`}>
-                              {card.score}
-                            </span>
-                            {isFront && (
-                              <div className="sw-overlay">
-                                <div className="sw-type">{card.type}</div>
-                                <h3 className="sw-title">{card.title}</h3>
-                                <div className="sw-addr">
-                                  {card.address}
-                                  <span style={{ color: 'var(--fg-3)' }}> · {card.neighborhood}</span>
-                                </div>
-                                <div className="sw-details">{card.details}</div>
+                          <span className="sw-source">{card.source}</span>
+                          <span className={`sw-score${card.scoreWarm ? ' sw-score-warm' : ''}`}>
+                            {card.score}
+                          </span>
+                          {isFront && (
+                            <div className="sw-overlay">
+                              <div className="sw-type">{card.type}</div>
+                              <h3 className="sw-title">{card.title}</h3>
+                              <div className="sw-addr">
+                                {card.address}
+                                <span className="sw-addr-sub"> · {card.neighborhood}</span>
                               </div>
-                            )}
-                          </div>
+                              <div className="sw-details">{card.details}</div>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
                   {/* Actions */}
                   <div className="sw-actions">
                     <button
+                      ref={noBtnRef}
                       className="sw-btn sw-no"
-                      onClick={() => handleAction('no')}
+                      onClick={() => { bounceBtn(noBtnRef.current); handleAction('no'); }}
+                      onPointerEnter={() => setBtnIntensity(noBtnRef.current, 1)}
+                      onPointerLeave={() => setBtnIntensity(noBtnRef.current, 0)}
                       disabled={busy}
                       aria-label="No aprobar"
                     >
-                      <X size={22} strokeWidth={2} />
-                      <span>No</span>
+                      <X size={26} strokeWidth={2.2} />
                     </button>
 
                     {front && (
@@ -285,41 +248,32 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
                         className="sw-link"
                       >
                         <ExternalLink size={13} strokeWidth={SW} />
-                        Ver en {front.source}
+                        Ver propiedad
                       </a>
                     )}
 
                     <button
+                      ref={siBtnRef}
                       className="sw-btn sw-si"
-                      onClick={() => handleAction('si')}
+                      onClick={() => { bounceBtn(siBtnRef.current); handleAction('si'); }}
+                      onPointerEnter={() => setBtnIntensity(siBtnRef.current, 1)}
+                      onPointerLeave={() => setBtnIntensity(siBtnRef.current, 0)}
                       disabled={busy}
                       aria-label="Aprobar"
                     >
-                      <Check size={22} strokeWidth={2} />
-                      <span>Sí</span>
+                      <Check size={26} strokeWidth={2.2} />
                     </button>
                   </div>
                 </div>
 
-                {/* Summary + raw description on the right */}
+                {/* Summary on the right */}
                 {front && (
                   <aside className="sw-desc-panel">
-                    {front.summary ? (
-                      <>
-                        <div className="sw-desc-label">
-                          <span className="sw-ai-dot" />
-                          Resumen IA
-                        </div>
-                        <p className="sw-summary">{front.summary}</p>
-                        <div className="sw-desc-label sw-desc-label-secondary">Descripción original</div>
-                        <p className="sw-raw">{front.description}</p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="sw-desc-label">Descripción</div>
-                        <p className="sw-raw">{front.description}</p>
-                      </>
-                    )}
+                    <div className="sw-desc-label">
+                      <span className="sw-ai-dot" />
+                      Resumen IA
+                    </div>
+                    <p className="sw-summary">{front.summary ?? front.description}</p>
                   </aside>
                 )}
               </>

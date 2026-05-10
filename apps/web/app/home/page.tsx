@@ -1,81 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { gsap } from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import {
-  Search, Layers, MessageSquare, Bell, BarChart2, Wand2,
   MapPin, SlidersHorizontal, Calendar, PawPrint, ArrowRight,
 } from 'lucide-react';
+
+import AppSidebar from '../../components/app-sidebar';
 
 gsap.registerPlugin(SplitText);
 
 const SW = 1.6;
-
-const navItems = [
-  { id: 'home',       href: '/home',       label: 'Buscar',         ico: 'search', group: 'principal' },
-  { id: 'feed',       href: '/feed',       label: 'Encontrados',    ico: 'stack',  badge: '24', group: 'principal' },
-  { id: 'chats',      href: '/chats',      label: 'Conversaciones', ico: 'chat',   badge: '8',  group: 'principal' },
-  { id: 'pending',    href: '/pending',    label: 'Pendientes',     ico: 'bell',   badge: '3',  urgent: true, group: 'principal' },
-  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',       ico: 'spark',  group: 'operación' },
-  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',  ico: 'wand',   group: 'operación' },
-] as const;
-
-const navIcons: Record<string, React.ReactNode> = {
-  search: <Search  size={16} strokeWidth={SW} />,
-  stack:  <Layers  size={16} strokeWidth={SW} />,
-  chat:   <MessageSquare size={16} strokeWidth={SW} />,
-  bell:   <Bell    size={16} strokeWidth={SW} />,
-  spark:  <BarChart2 size={16} strokeWidth={SW} />,
-  wand:   <Wand2   size={16} strokeWidth={SW} />,
-};
-
-function Sidebar() {
-  const groups = navItems.reduce<Record<string, typeof navItems[number][]>>((acc, item) => {
-    (acc[item.group] ??= []).push(item);
-    return acc;
-  }, {});
-
-  return (
-    <aside className="side">
-      <div className="brand">
-        <div className="mark">c.</div>
-        <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
-        <div className="meta">v0.4</div>
-      </div>
-      {Object.entries(groups).map(([group, items]) => (
-        <div key={group}>
-          <div className="group-label">{group}</div>
-          <div className="nav">
-            {items.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                className={`${item.id === 'home' ? 'active' : ''} ${'urgent' in item && item.urgent ? 'urgent' : ''}`}
-              >
-                <span className="ico">{navIcons[item.ico]}</span>
-                <span>{item.label}</span>
-                {'badge' in item && item.badge && (
-                  <span className="badge">{item.badge}</span>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className="side-foot">
-        <div className="user">
-          <div className="avatar">M</div>
-          <div className="who">
-            Martina Ríos
-            <small>Plan agente · BA</small>
-          </div>
-          <div className="status" title="Bot activo" />
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 function Topbar() {
   return (
@@ -98,9 +35,21 @@ function Topbar() {
 }
 
 export default function HomePage() {
+  const router = useRouter();
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
     initAnimations();
   }, []);
+
+  function goSearch(query: string) {
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+      composerRef.current?.focus();
+      return;
+    }
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  }
 
   function initAnimations() {
     gsap.defaults({ ease: 'power3.out' });
@@ -219,13 +168,14 @@ export default function HomePage() {
   }
 
   function handlePreset(text: string) {
-    const ta = document.querySelector<HTMLTextAreaElement>('.composer textarea');
-    if (ta) { ta.value = 'Busco un 2 ambientes — ' + text.toLowerCase(); ta.focus(); }
+    const phrase = `Busco un 2 ambientes — ${text.toLowerCase()}`;
+    if (composerRef.current) composerRef.current.value = phrase;
+    goSearch(phrase);
   }
 
   return (
     <div className="app">
-      <Sidebar />
+      <AppSidebar />
       <div>
         <Topbar />
         <main className="home" style={{ position: 'relative', minHeight: 'calc(100vh - 60px)', padding: '32px 56px 80px', overflow: 'hidden' }}>
@@ -251,9 +201,6 @@ export default function HomePage() {
 
             {/* Hero */}
             <section style={{ textAlign: 'center', padding: '28px 0 24px' }}>
-              <div className="hero-eyebrow eyebrow" style={{ marginBottom: 18 }}>
-                <span className="dot" />NUEVA BÚSQUEDA · OK · 9 MAY 14:32
-              </div>
               <h1
                 className="hero-h1"
                 style={{
@@ -282,7 +229,14 @@ export default function HomePage() {
                 borderRadius: 18, padding: '14px 16px 10px', boxShadow: 'var(--shadow-soft)',
               }}>
                 <textarea
+                  ref={composerRef}
                   placeholder="Quiero un 2 ambientes en Palermo o Villa Crespo, hasta $750.000 + expensas, que acepte mascotas y entre a partir del 1 de junio…"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      goSearch((e.currentTarget as HTMLTextAreaElement).value);
+                    }
+                  }}
                   style={{
                     width: '100%', background: 'transparent', border: 0, resize: 'none',
                     color: 'var(--fg)', fontFamily: '"Space Grotesk", sans-serif',
@@ -308,12 +262,17 @@ export default function HomePage() {
                       {label}
                     </button>
                   ))}
-                  <button className="send-btn" aria-label="Enviar a Casita" style={{
-                    marginLeft: 'auto', width: 44, height: 44, borderRadius: '50%',
-                    background: 'var(--acc)', color: 'var(--acc-ink)',
-                    display: 'grid', placeItems: 'center', border: 0, cursor: 'pointer',
-                    willChange: 'transform',
-                  }}>
+                  <button
+                    className="send-btn"
+                    aria-label="Enviar a Casita"
+                    onClick={() => goSearch(composerRef.current?.value ?? '')}
+                    style={{
+                      marginLeft: 'auto', width: 44, height: 44, borderRadius: '50%',
+                      background: 'var(--acc)', color: 'var(--acc-ink)',
+                      display: 'grid', placeItems: 'center', border: 0, cursor: 'pointer',
+                      willChange: 'transform',
+                    }}
+                  >
                     <ArrowRight size={18} strokeWidth={2} />
                   </button>
                 </div>

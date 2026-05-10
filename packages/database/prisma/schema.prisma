@@ -9,14 +9,25 @@ datasource db {
 }
 
 /// Mirrors the Supabase Auth user via id (uuid). Profile data lives here.
-/// id MUST equal auth.users.id from Supabase so RLS policies can reference it.
+/// id MUST equal auth.users.id from Supabase so RLS policies can reference it
+/// (mock users inserted without auth use a synthetic uuid and won't pass RLS).
 model User {
-  id        String   @id @db.Uuid
-  email     String   @unique
-  name      String?
-  avatarUrl String?  @map("avatar_url")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                  String   @id @db.Uuid
+  email               String   @unique
+  name                String?
+  avatarUrl           String?  @map("avatar_url")
+  phoneE164           String?  @map("phone_e164")
+  /// Client-profile fields. Captured once by the search agent and reused.
+  hasPet              Boolean? @map("has_pet")
+  petDetails          String?  @map("pet_details")
+  hasRealEstate       Boolean? @map("has_real_estate")
+  realEstateLocation  String?  @map("real_estate_location")
+  hasGuarantor        Boolean? @map("has_guarantor")
+  guarantorDetails    String?  @map("guarantor_details")
+  /// 'has' | 'can_contract' | 'no'
+  caucionStatus       String?  @map("caucion_status")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("users")
 }

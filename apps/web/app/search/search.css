@@ -1,0 +1,216 @@
+/* Search page reuses chats.css base classes (.thread, .msg, .bubble, .thread-composer)
+   and overrides only what differs: 2-column grid (thread + filters rail). */
+
+main.search {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  overflow: hidden;
+}
+
+.search-thread {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.search-thread .msgs {
+  padding: 28px 64px;
+  max-width: 920px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.search-thread .msg .bubble {
+  max-width: 70ch;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.search-thread .thread-composer {
+  max-width: 920px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Filters rail */
+.filters-rail {
+  padding: 24px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--bg-1);
+}
+
+.filters-rail h3 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.rail-empty {
+  font-size: 13px;
+  color: var(--fg-3);
+  line-height: 1.45;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-3);
+  padding: 16px;
+}
+
+.rail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rail-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-3);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  animation: rail-chip-in 240ms ease-out both;
+}
+
+@keyframes rail-chip-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.rail-chip-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: oklch(0.25 0.07 116 / 0.4);
+  color: var(--acc);
+  flex: none;
+}
+
+/* Profile chips look slightly different (warmer) so the user gets that they
+   represent persistent personal data, not session search filters. */
+.rail-chip-profile {
+  border-color: oklch(0.30 0.06 280 / 0.5);
+}
+.rail-chip-icon-profile {
+  background: oklch(0.28 0.06 280 / 0.5);
+  color: oklch(0.85 0.10 280);
+}
+
+.rail-chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rail-chip-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.rail-chip-value {
+  font-size: 13.5px;
+  color: var(--fg);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-go {
+  margin-top: auto;
+  padding: 14px;
+  border-radius: var(--r-3);
+  border: 0;
+  background: var(--acc);
+  color: var(--acc-ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: filter 150ms;
+}
+.search-go:disabled {
+  background: var(--bg-2);
+  color: var(--fg-3);
+  cursor: not-allowed;
+}
+.search-go:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+/* Quick-reply chips below the latest assistant message */
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 12px;
+  animation: quick-replies-in 240ms ease-out both;
+}
+
+@keyframes quick-replies-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.quick-reply {
+  appearance: none;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.quick-reply:hover {
+  background: var(--bg-2);
+  border-color: var(--line-2);
+  color: var(--fg);
+}
+
+.quick-reply:active {
+  transform: scale(0.97);
+}
+
+/* Loader bubble (3 dots) for the assistant while it thinks */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-3);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  width: fit-content;
+}
+.thinking span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--fg-3);
+  animation: thinking-bounce 1.2s infinite ease-in-out;
+}
+.thinking span:nth-child(2) { animation-delay: 0.18s; }
+.thinking span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes thinking-bounce {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40%           { opacity: 1;    transform: translateY(-3px); }
+}

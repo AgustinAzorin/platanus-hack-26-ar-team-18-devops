@@ -1,74 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Search, Layers, MessageSquare, Bell, BarChart2, Wand2 } from 'lucide-react';
 
-const SW = 1.6;
-
-const navItems = [
-  { id: 'home',       href: '/home',       label: 'Buscar',         ico: 'search', group: 'principal' },
-  { id: 'feed',       href: '/feed',       label: 'Encontrados',    ico: 'stack',  badge: '24', group: 'principal' },
-  { id: 'chats',      href: '/chats',      label: 'Conversaciones', ico: 'chat',   badge: '8',  group: 'principal' },
-  { id: 'pending',    href: '/pending',    label: 'Pendientes',     ico: 'bell',   badge: '3',  urgent: true, group: 'principal' },
-  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',       ico: 'spark',  group: 'operación' },
-  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',  ico: 'wand',   group: 'operación' },
-] as const;
-
-const navIcons: Record<string, React.ReactNode> = {
-  search: <Search       size={16} strokeWidth={SW} />,
-  stack:  <Layers       size={16} strokeWidth={SW} />,
-  chat:   <MessageSquare size={16} strokeWidth={SW} />,
-  bell:   <Bell         size={16} strokeWidth={SW} />,
-  spark:  <BarChart2    size={16} strokeWidth={SW} />,
-  wand:   <Wand2        size={16} strokeWidth={SW} />,
-};
-
-function Sidebar() {
-  const groups = navItems.reduce<Record<string, typeof navItems[number][]>>((acc, item) => {
-    (acc[item.group] ??= []).push(item);
-    return acc;
-  }, {});
-
-  return (
-    <aside className="side">
-      <div className="brand">
-        <div className="mark">c.</div>
-        <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
-        <div className="meta">v0.4</div>
-      </div>
-      {Object.entries(groups).map(([group, items]) => (
-        <div key={group}>
-          <div className="group-label">{group}</div>
-          <div className="nav">
-            {items.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                className={`${item.id === 'onboarding' ? 'active' : ''} ${'urgent' in item && item.urgent ? 'urgent' : ''}`}
-              >
-                <span className="ico">{navIcons[item.ico]}</span>
-                <span>{item.label}</span>
-                {'badge' in item && item.badge && (
-                  <span className="badge">{item.badge}</span>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className="side-foot">
-        <div className="user">
-          <div className="avatar">M</div>
-          <div className="who">
-            Martina Ríos
-            <small>Plan agente · BA</small>
-          </div>
-          <div className="status" title="Bot activo" />
-        </div>
-      </div>
-    </aside>
-  );
-}
+import AppSidebar from '../../components/app-sidebar';
 
 function Topbar() {
   return (
@@ -96,17 +30,9 @@ export default function OnboardingPage() {
   const [zones, setZones] = useState(['Palermo Soho', 'Villa Crespo', 'Caballito']);
   const [musts, setMusts] = useState(['Mascotas OK', 'Luz natural', 'Cocina separada', 'Sin garante propietario']);
   const [discards, setDiscards] = useState(['Contrafrente', 'PB sin patio', '"Ideal estudiante"']);
-  const [sources, setSources] = useState(['ArgenProp', 'Zonaprop', 'Mercado Libre']);
-
   const allZones = ['Palermo Soho', 'Villa Crespo', 'Caballito', 'Almagro', 'Boedo', 'Núñez'];
   const allMusts = ['Mascotas OK', 'Luz natural', 'Cocina separada', 'Balcón', 'Cochera', 'Sin garante propietario'];
   const allDiscards = ['Contrafrente', 'PB sin patio', '"Ideal estudiante"'];
-  const allSources = [
-    { id: 'ArgenProp',    interval: 'CADA 6 MIN',    stats: '12.412 listings activos' },
-    { id: 'Zonaprop',     interval: 'CADA 6 MIN',    stats: '9.880 listings activos' },
-    { id: 'Mercado Libre',interval: 'CADA 12 MIN',   stats: '6.301 listings activos' },
-    { id: 'InmoBaires',   interval: 'DESCONECTADO',  stats: 'menor cobertura' },
-  ];
 
   function toggle<T>(arr: T[], val: T): T[] {
     return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
@@ -136,7 +62,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="app">
-      <Sidebar />
+      <AppSidebar />
       <div>
         <Topbar />
         <main style={{ padding: '48px 56px 80px', position: 'relative', minHeight: 'calc(100vh - 60px)' }}>
@@ -236,43 +162,6 @@ export default function OnboardingPage() {
                         </div>
                       </div>
                     ))}
-                  </div>
-                </section>
-
-                {/* Sources */}
-                <section className="js-fade" style={{ background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 'var(--r-3)', padding: '28px 30px' }}>
-                  <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 500, letterSpacing: '-0.015em' }}>Fuentes de propiedades</h3>
-                  <p style={{ color: 'var(--fg-2)', fontSize: 14, margin: '0 0 20px', maxWidth: '60ch' }}>
-                    Elegí qué portales escanear. Casita unifica formatos, detecta duplicados y trae a una sola vista. <b style={{ color: 'var(--fg-1)', fontWeight: 500 }}>Recomendado: los 4 activos.</b>
-                  </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                    {allSources.map(({ id, interval, stats }) => {
-                      const on = sources.includes(id);
-                      return (
-                        <div key={id} onClick={() => setSources(s => toggle(s, id))} style={{
-                          border: `1px solid ${on ? 'var(--acc)' : 'var(--line)'}`,
-                          borderRadius: 12, padding: 16,
-                          background: on ? 'oklch(0.92 0.205 116 / 0.04)' : 'var(--bg)',
-                          display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer',
-                        }}>
-                          <div style={{ fontWeight: 500, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {id}
-                            <div style={{
-                              width: 28, height: 16, borderRadius: 999,
-                              background: on ? 'var(--acc)' : 'var(--bg-3)',
-                              position: 'relative', marginLeft: 'auto', transition: 'background 150ms',
-                            }}>
-                              <div style={{
-                                position: 'absolute', left: on ? 14 : 2, top: 2, width: 12, height: 12, borderRadius: '50%',
-                                background: on ? 'var(--acc-ink)' : 'white', transition: 'left 150ms',
-                              }} />
-                            </div>
-                          </div>
-                          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, color: 'var(--fg-3)', letterSpacing: '0.1em' }}>{interval}</div>
-                          <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>{stats}</div>
-                        </div>
-                      );
-                    })}
                   </div>
                 </section>
 
@@ -383,7 +272,7 @@ export default function OnboardingPage() {
                         PREVIEW · {TONES.find(t => t.id === activeTone)?.label.toUpperCase()}
                       </div>
                       <div style={{
-                        background: 'var(--whats)', color: 'oklch(0.16 0.04 150)',
+                        background: 'var(--acc)', color: 'var(--acc-ink)',
                         padding: '12px 14px', borderRadius: '12px 12px 12px 4px',
                         maxWidth: '80%', fontSize: 13.5, lineHeight: 1.45,
                       }}>
