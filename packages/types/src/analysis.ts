@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-// Accept number, null, or other types and convert to number or default to 0
-const NumberField = z.number().or(z.null().transform(() => 0)).or(z.unknown().transform(() => 0));
+// Accept number or null/missing, default to 0. Uses preprocess so the schema's
+// input type stays `unknown` and the output type is cleanly `number`.
+const NumberField = z.preprocess((v) => (typeof v === 'number' ? v : 0), z.number());
 
 export const CostoTotalEstimadoSchema = z.object({
   alquiler: NumberField,

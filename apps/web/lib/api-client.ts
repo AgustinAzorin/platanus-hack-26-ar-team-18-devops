@@ -21,10 +21,10 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
+async function request<S extends z.ZodTypeAny>(
   path: string,
-  init: RequestInit & { token?: string; schema: z.ZodType<T> },
-): Promise<T> {
+  init: RequestInit & { token?: string; schema: S },
+): Promise<z.output<S>> {
   const { token, schema, ...rest } = init;
 
   const headers = new Headers(rest.headers);
