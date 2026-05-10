@@ -289,10 +289,8 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
                           {c.approveAction === 'feed-decide' ? (
                             isBelowThreshold ? null : (
                               <a
-                                href={c.sourceUrl}
+                                href={`/informe/${c.feedRowId}`}
                                 className="btn btn-acc"
-                                target="_blank"
-                                rel="noopener noreferrer"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                               >
                                 <FileText size={13} strokeWidth={SW} /> Ver informe
