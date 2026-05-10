@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { gsap } from 'gsap';
-import { Heart, Check, X } from 'lucide-react';
+import { Heart, FileText } from 'lucide-react';
 
 import type { FeedCard, FeedSummary } from './data';
 import AppSidebar from '../../components/app-sidebar';
@@ -37,7 +37,7 @@ function statusContent(card: FeedCard) {
 
   switch (card.statusKind) {
     case 'ai-report':
-      return <><b style={{ color: 'var(--acc)' }}>Informe IA</b> · {timeLabel} · esperando tu OK</>;
+      return <><b style={{ color: 'var(--acc)' }}>Informe IA</b> · {timeLabel}</>;
     case 'responded-fed':
       return <><b style={{ color: 'var(--pos)' }}>Respondió {name}</b> · propuso jueves 16hs</>;
     case 'casita-wrote':
@@ -61,8 +61,24 @@ interface FeedClientProps {
 }
 
 export default function FeedClient({ cards: initialCards, summary }: FeedClientProps) {
-  const [cards, setCards] = useState<FeedCard[]>(initialCards);
-  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [cards] = useState<FeedCard[]>(initialCards);
+  const [threshold, setThreshold] = useState(70);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('feedScoreThreshold');
+    if (saved !== null) setThreshold(Number(saved));
+  }, []);
+
+  function handleThresholdChange(v: number) {
+    setThreshold(v);
+    localStorage.setItem('feedScoreThreshold', String(v));
+  }
+
+  const aiFeedCards = cards.filter((c) => c.approveAction === 'feed-decide');
+  const aboveCards = aiFeedCards.filter((c) => c.score >= threshold);
+  const belowCards = aiFeedCards.filter((c) => c.score < threshold);
+  const otherCards = cards.filter((c) => c.approveAction !== 'feed-decide');
+  const orderedCards = [...otherCards, ...aboveCards, ...belowCards];
 
   useEffect(() => {
     gsap.defaults({ ease: 'power3.out' });
@@ -100,26 +116,6 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
     return () => cleanups.forEach((fn) => fn());
   }, [cards.length]);
 
-  async function handleDecide(card: FeedCard, action: 'accepted' | 'rejected') {
-    if (!card.feedRowId || decidingId) return;
-    setDecidingId(card.id);
-    const prev = cards;
-    setCards((cs) => cs.filter((c) => c.id !== card.id));
-    try {
-      const res = await fetch(`/api/feed/${card.feedRowId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: action }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      console.error('[feed] decide failed:', err);
-      setCards(prev); // rollback
-    } finally {
-      setDecidingId(null);
-    }
-  }
-
   return (
     <div className="app">
       <AppSidebar />
@@ -132,16 +128,16 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
               <div className="eyebrow">
                 <span className="dot" />
                 {summary.fromAI
-                  ? 'INFORMES IA · DECIDÍ CUÁLES SE CONTACTAN'
+                  ? 'INFORMES IA · REVISÁ LOS QUE SUPERAN TU UMBRAL'
                   : 'BÚSQUEDA ACTIVA · 2 amb · Palermo + Villa Crespo + Caballito'}
               </div>
               <h1 style={{ marginTop: 18 }}>
-                <span className="acc">{cards.length}</span> {summary.fromAI ? 'informes' : 'propiedades'}<br />
-                {summary.fromAI ? <>esperando <span className="it">tu OK</span></> : <>filtradas <span className="it">para vos</span></>}
+                <span className="acc">{aboveCards.length || cards.length}</span> {summary.fromAI ? 'informes' : 'propiedades'}<br />
+                {summary.fromAI ? <>listos para <span className="it">revisar</span></> : <>filtradas <span className="it">para vos</span></>}
               </h1>
               <p className="sub">
                 {summary.fromAI
-                  ? 'Casita IA filtró estas propiedades a partir de tu charla. Aprobá las que te interesen y la IA arranca el contacto con el dueño. Las que rechaces se descartan.'
+                  ? `Casita IA generó ${cards.length} informes. ${aboveCards.length} superan el umbral de score ${threshold} y tienen informe disponible. ${belowCards.length > 0 ? `${belowCards.length} quedaron por debajo del umbral y se marcaron como descartadas.` : ''}`
                   : `De ${summary.scanned} listings encontrados, Casita descartó ${summary.scanned - summary.filtered} por contrafrente, expensas escondidas, fotos repetidas o requisitos imposibles. Estos quedaron.`}
               </p>
             </div>
@@ -174,7 +170,31 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
               <span className="f-chip">Zonaprop</span>
               <span className="f-chip">M. Libre</span>
             </div>
-            <div className="right">
+            <div className="right" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              {summary.fromAI && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--fg-2)', whiteSpace: 'nowrap' }}>Umbral score:</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={threshold}
+                    onChange={(e) => handleThresholdChange(Number(e.target.value))}
+                    style={{ width: 90, accentColor: 'var(--acc)', cursor: 'pointer' }}
+                  />
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 12, minWidth: 26, textAlign: 'right',
+                      color: threshold >= 70 ? 'var(--acc)' : threshold >= 50 ? 'var(--warm)' : 'var(--neg)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {threshold}
+                  </span>
+                </div>
+              )}
               <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Ordenar:</span>
               <div className="seg">
                 <button className="on">Match</button>
@@ -195,112 +215,110 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
               </div>
 
               <div className="cards">
-                {cards.map((c) => (
-                  <article key={c.id} className={`pcard${c.discarded ? ' discarded' : ''}`}>
-                    <div className="img-wrap">
-                      <div
-                        className={`ph-img${c.imgUrl ? ' ph-img-photo' : ''}`}
-                        style={c.imgUrl ? { backgroundImage: `url("${c.imgUrl}")` } : undefined}
-                      >
-                        {!c.imgUrl && <span className="ph-label">FOTO</span>}
-                      </div>
-                      <div className="img-overlay">
-                        <div className="top-row">
-                          <span className="src">{c.src}</span>
-                          <span className={`score${c.scoreClass ? ` ${c.scoreClass}` : ''}`}>{c.score}</span>
-                          {c.heart && <button className="heart"><Heart size={14} strokeWidth={SW} /></button>}
+                {orderedCards.map((c) => {
+                  const isBelowThreshold = c.approveAction === 'feed-decide' && c.score < threshold;
+                  return (
+                    <article key={c.id} className={`pcard${c.discarded || isBelowThreshold ? ' discarded' : ''}`}>
+                      <div className="img-wrap">
+                        <div
+                          className={`ph-img${c.imgUrl ? ' ph-img-photo' : ''}`}
+                          style={c.imgUrl ? { backgroundImage: `url("${c.imgUrl}")` } : undefined}
+                        >
+                          {!c.imgUrl && <span className="ph-label">FOTO</span>}
+                        </div>
+                        <div className="img-overlay">
+                          <div className="top-row">
+                            <span className="src">{c.src}</span>
+                            <span className={`score${c.scoreClass ? ` ${c.scoreClass}` : ''}`}>{c.score}</span>
+                            {c.heart && <button className="heart"><Heart size={14} strokeWidth={SW} /></button>}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="body">
-                      <h4>{c.title}</h4>
-                      <div className="addr">{c.addr}</div>
-                      <div className="price">
-                        <span className="num">{c.price}</span>
-                        {c.exp && <span className="exp">{c.exp}</span>}
-                      </div>
-                      <div className="specs">
-                        {c.specs.map((s, j) => <span key={j}>{s}</span>)}
-                      </div>
-                      {c.summary && (
-                        <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>
-                          {c.summary}
-                        </p>
-                      )}
-                      {(c.pros && c.pros.length > 0) || (c.cons && c.cons.length > 0) ? (
-                        <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11.5 }}>
-                          {c.pros && c.pros.length > 0 && (
-                            <div style={{ flex: 1 }}>
-                              <div style={{ color: 'var(--pos)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A favor</div>
-                              <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
-                                {c.pros.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
-                              </ul>
-                            </div>
-                          )}
-                          {c.cons && c.cons.length > 0 && (
-                            <div style={{ flex: 1 }}>
-                              <div style={{ color: 'var(--warm)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A tener en cuenta</div>
-                              <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
-                                {c.cons.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
-                              </ul>
-                            </div>
-                          )}
+                      <div className="body">
+                        <h4>{c.title}</h4>
+                        <div className="addr">{c.addr}</div>
+                        <div className="price">
+                          <span className="num">{c.price}</span>
+                          {c.exp && <span className="exp">{c.exp}</span>}
                         </div>
-                      ) : null}
-                      <div className={`status-row ${c.status}`}>
-                        <span className="sdot" />
-                        <span>{statusContent(c)}</span>
-                      </div>
-                      <div className="card-actions">
-                        {c.approveAction === 'feed-decide' ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-ghost"
-                              disabled={decidingId === c.id}
-                              onClick={() => void handleDecide(c, 'rejected')}
-                              style={{ color: 'var(--neg)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <X size={13} strokeWidth={SW} /> Descartar
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-acc"
-                              disabled={decidingId === c.id}
-                              onClick={() => void handleDecide(c, 'accepted')}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <Check size={13} strokeWidth={SW} /> Aceptar y contactar
-                            </button>
-                            <a
-                              href={c.sourceUrl}
-                              className="btn btn-ink"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              Ver detalle
-                            </a>
-                          </>
-                        ) : c.approveAction === 'approve-detail' ? (
-                          <>
-                            <a href="/pending" className="btn btn-warm">Aprobar</a>
-                            <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver detalle</a>
-                          </>
-                        ) : c.approveAction === 'force-detail' ? (
-                          <>
-                            <a href="#" className="btn btn-ghost">Forzar contacto</a>
-                            <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver razón</a>
-                          </>
-                        ) : (
-                          <>
-                            <a href={c.sourceUrl} className="btn btn-acc" target="_blank" rel="noopener noreferrer">Ver detalle</a>
-                            <a href="/chats" className="btn btn-ink">Ver chat</a>
-                          </>
+                        <div className="specs">
+                          {c.specs.map((s, j) => <span key={j}>{s}</span>)}
+                        </div>
+                        {c.summary && (
+                          <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>
+                            {c.summary}
+                          </p>
                         )}
+                        {(c.pros && c.pros.length > 0) || (c.cons && c.cons.length > 0) ? (
+                          <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11.5 }}>
+                            {c.pros && c.pros.length > 0 && (
+                              <div style={{ flex: 1 }}>
+                                <div style={{ color: 'var(--pos)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A favor</div>
+                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
+                                  {c.pros.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {c.cons && c.cons.length > 0 && (
+                              <div style={{ flex: 1 }}>
+                                <div style={{ color: 'var(--warm)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, marginBottom: 4 }}>A tener en cuenta</div>
+                                <ul style={{ margin: 0, paddingLeft: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
+                                  {c.cons.slice(0, 3).map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {isBelowThreshold ? (
+                          <div className="status-row discarded">
+                            <span className="sdot" />
+                            <span>
+                              <b style={{ color: 'var(--neg)' }}>Descartado</b>
+                              {' · '}score {c.score} bajo umbral {threshold}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className={`status-row ${c.status}`}>
+                            <span className="sdot" />
+                            <span>{statusContent(c)}</span>
+                          </div>
+                        )}
+
+                        <div className="card-actions">
+                          {c.approveAction === 'feed-decide' ? (
+                            isBelowThreshold ? null : (
+                              <a
+                                href={c.sourceUrl}
+                                className="btn btn-acc"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <FileText size={13} strokeWidth={SW} /> Ver informe
+                              </a>
+                            )
+                          ) : c.approveAction === 'approve-detail' ? (
+                            <>
+                              <a href="/pending" className="btn btn-warm">Aprobar</a>
+                              <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver detalle</a>
+                            </>
+                          ) : c.approveAction === 'force-detail' ? (
+                            <>
+                              <a href="#" className="btn btn-ghost">Forzar contacto</a>
+                              <a href={c.sourceUrl} className="btn btn-ink" target="_blank" rel="noopener noreferrer">Ver razón</a>
+                            </>
+                          ) : (
+                            <>
+                              <a href={c.sourceUrl} className="btn btn-acc" target="_blank" rel="noopener noreferrer">Ver detalle</a>
+                              <a href="/chats" className="btn btn-ink">Ver chat</a>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
                 {cards.length === 0 && (
                   <div style={{ gridColumn: '1 / -1', padding: '60px 20px', textAlign: 'center', color: 'var(--fg-3)', fontSize: 14, lineHeight: 1.5 }}>
                     No hay propiedades para mostrar. Pedile una nueva búsqueda a Casita IA.
@@ -323,9 +341,11 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
                 <h4>{summary.fromAI ? 'Resumen del informe' : 'Resumen de la búsqueda'}</h4>
                 {summary.fromAI ? (
                   <>
-                    <div className="rstat"><span className="k">Total informes</span><span className="v acc">{summary.total}</span></div>
-                    <div className="rstat"><span className="k">Esperan tu OK</span><span className="v warm">{summary.pending}</span></div>
-                    <div className="rstat"><span className="k">Score promedio</span>
+                    <div className="rstat"><span className="k">Total informes</span><span className="v">{summary.total}</span></div>
+                    <div className="rstat"><span className="k">Sobre umbral ({threshold}+)</span><span className="v acc">{aboveCards.length}</span></div>
+                    <div className="rstat"><span className="k">Descartados</span><span className="v" style={{ color: 'var(--neg)' }}>{belowCards.length}</span></div>
+                    <div className="rstat">
+                      <span className="k">Score promedio</span>
                       <span className="v">{cards.length > 0 ? Math.round(cards.reduce((s, c) => s + c.score, 0) / cards.length) : 0}</span>
                     </div>
                   </>
@@ -372,7 +392,7 @@ export default function FeedClient({ cards: initialCards, summary }: FeedClientP
                 </h4>
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.5 }}>
                   {summary.fromAI
-                    ? 'Cuando aceptás un informe, la IA escribe al dueño por vos y, cuando cierra una cita, te avisa en Pendientes para que la confirmes.'
+                    ? 'Los informes que superan tu umbral de score están disponibles para revisar. Ajustá el umbral en los filtros para ver más o menos resultados.'
                     : <>3 mensajes en cola. Próximo refresco en <span className="mono">04:12</span>.</>}
                 </p>
                 <a href="/chats" className="btn btn-acc" style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}>
