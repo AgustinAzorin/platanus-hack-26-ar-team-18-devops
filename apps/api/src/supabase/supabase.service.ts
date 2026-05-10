@@ -32,7 +32,8 @@ export class SupabaseService {
         autoRefreshToken: false,
         persistSession: false,
       },
-      realtime: { transport: ws },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      realtime: { transport: ws as any },
     });
 
     this.anon = createClient(url, anonKey, {
@@ -40,7 +41,8 @@ export class SupabaseService {
         autoRefreshToken: false,
         persistSession: false,
       },
-      realtime: { transport: ws },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      realtime: { transport: ws as any },
     });
 
     this.logger.log('Supabase clients initialized (admin + anon)');
