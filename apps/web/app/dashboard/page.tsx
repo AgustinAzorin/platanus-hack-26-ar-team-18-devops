@@ -1,74 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Search, Layers, MessageSquare, Bell, BarChart2, Wand2 } from 'lucide-react';
 
-const SW = 1.6;
-
-const navItems = [
-  { id: 'home',       href: '/home',       label: 'Buscar',         ico: 'search', group: 'principal' },
-  { id: 'feed',       href: '/feed',       label: 'Encontrados',    ico: 'stack',  badge: '24', group: 'principal' },
-  { id: 'chats',      href: '/chats',      label: 'Conversaciones', ico: 'chat',   badge: '8',  group: 'principal' },
-  { id: 'pending',    href: '/pending',    label: 'Pendientes',     ico: 'bell',   badge: '3',  urgent: true, group: 'principal' },
-  { id: 'dashboard',  href: '/dashboard',  label: 'Métricas',       ico: 'spark',  group: 'operación' },
-  { id: 'onboarding', href: '/onboarding', label: 'Setup inicial',  ico: 'wand',   group: 'operación' },
-] as const;
-
-const navIcons: Record<string, React.ReactNode> = {
-  search: <Search       size={16} strokeWidth={SW} />,
-  stack:  <Layers       size={16} strokeWidth={SW} />,
-  chat:   <MessageSquare size={16} strokeWidth={SW} />,
-  bell:   <Bell         size={16} strokeWidth={SW} />,
-  spark:  <BarChart2    size={16} strokeWidth={SW} />,
-  wand:   <Wand2        size={16} strokeWidth={SW} />,
-};
-
-function Sidebar() {
-  const groups = navItems.reduce<Record<string, typeof navItems[number][]>>((acc, item) => {
-    (acc[item.group] ??= []).push(item);
-    return acc;
-  }, {});
-
-  return (
-    <aside className="side">
-      <div className="brand">
-        <div className="mark">c.</div>
-        <div className="name">casita<span style={{ color: 'var(--fg-3)' }}>·</span>fast</div>
-        <div className="meta">v0.4</div>
-      </div>
-      {Object.entries(groups).map(([group, items]) => (
-        <div key={group}>
-          <div className="group-label">{group}</div>
-          <div className="nav">
-            {items.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                className={`${item.id === 'dashboard' ? 'active' : ''} ${'urgent' in item && item.urgent ? 'urgent' : ''}`}
-              >
-                <span className="ico">{navIcons[item.ico]}</span>
-                <span>{item.label}</span>
-                {'badge' in item && item.badge && (
-                  <span className="badge">{item.badge}</span>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className="side-foot">
-        <div className="user">
-          <div className="avatar">M</div>
-          <div className="who">
-            Martina Ríos
-            <small>Plan agente · BA</small>
-          </div>
-          <div className="status" title="Bot activo" />
-        </div>
-      </div>
-    </aside>
-  );
-}
+import AppSidebar from '../../components/app-sidebar';
 
 function Topbar() {
   return (
@@ -129,7 +63,7 @@ export default function DashboardPage() {
 
   return (
     <div className="app">
-      <Sidebar />
+      <AppSidebar />
       <div>
         <Topbar />
         <main className="dash" style={{ padding: '40px 56px 80px' }}>

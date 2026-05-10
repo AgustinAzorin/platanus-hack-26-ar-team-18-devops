@@ -7,7 +7,8 @@ import pg from 'pg';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, '..', '.env') });
 
-const sqlPath = resolve(__dirname, 'sql', '001_chats_messages.sql');
+const fileArg = process.argv[2] ?? '001_chats_messages.sql';
+const sqlPath = resolve(__dirname, 'sql', fileArg);
 const sql = readFileSync(sqlPath, 'utf8');
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;

@@ -1,0 +1,54 @@
+import { NextResponse } from 'next/server';
+
+import { runChatTurn } from '../../../../lib/search/agent';
+import { getCurrentClientUserId, loadClientProfile, persistProfileUpdates } from '../../../../lib/search/profile';
+import { EMPTY_FILTERS, type ChatRequest } from '../../../../lib/search/types';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function POST(req: Request) {
+  let body: ChatRequest;
+  try {
+    body = (await req.json()) as ChatRequest;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  if (messages.length === 0) {
+    return NextResponse.json({ error: 'messages must be non-empty' }, { status: 400 });
+  }
+  const filters = { ...EMPTY_FILTERS, ...(body.filters ?? {}) };
+
+  try {
+    const userId = await getCurrentClientUserId();
+    const profileBefore = await loadClientProfile(userId);
+
+    const agent = await runChatTurn({ messages, filters, profile: profileBefore });
+
+    if (Object.keys(agent.profile_updates).length > 0) {
+      await persistProfileUpdates(userId, agent.profile_updates);
+    }
+
+    // Re-read the profile so the response reflects the current persistent state.
+    const profileAfter = await loadClientProfile(userId);
+
+    return NextResponse.json(
+      {
+        message: agent.message,
+        filters: agent.filters,
+        profile: profileAfter,
+        done: agent.done,
+        suggestions: agent.suggestions,
+      },
+      { status: 200 },
+    );
+  } catch (err) {
+    console.error('[search:chat] agent error:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Agent failed' },
+      { status: 502 },
+    );
+  }
+}

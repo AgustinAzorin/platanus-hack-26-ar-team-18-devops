@@ -6,6 +6,40 @@
 export interface Database {
   public: {
     Tables: {
+      users: {
+        Row: {
+          id: string;
+          email: string;
+          name: string | null;
+          avatar_url: string | null;
+          phone_e164: string | null;
+          has_pet: boolean | null;
+          pet_details: string | null;
+          has_real_estate: boolean | null;
+          real_estate_location: string | null;
+          has_guarantor: boolean | null;
+          guarantor_details: string | null;
+          caucion_status: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          name?: string | null;
+          avatar_url?: string | null;
+          phone_e164?: string | null;
+          has_pet?: boolean | null;
+          pet_details?: string | null;
+          has_real_estate?: boolean | null;
+          real_estate_location?: string | null;
+          has_guarantor?: boolean | null;
+          guarantor_details?: string | null;
+          caucion_status?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['users']['Insert']>;
+        Relationships: [];
+      };
       chats: {
         Row: {
           id: string;
