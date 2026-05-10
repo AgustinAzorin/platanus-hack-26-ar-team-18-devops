@@ -151,26 +151,33 @@ function buildProfileItems(profile: ClientProfile): RailItem[] {
 }
 
 function FiltersRail({
-  filters, profile, done, onSearch, searching,
+  filters, profile, done, onSearch, searching, showCta,
 }: {
   filters: SearchFilters;
   profile: ClientProfile;
   done: boolean;
   onSearch: () => void;
   searching: boolean;
+  showCta: boolean;
 }) {
-  const searchItems = buildSearchItems(filters);
+  const allSearchItems = buildSearchItems(filters);
+  const MAX_VISIBLE = 5;
+  const hiddenCount = Math.max(0, allSearchItems.length - MAX_VISIBLE);
+  const searchItems = allSearchItems.slice(-MAX_VISIBLE);
   const profileItems = buildProfileItems(profile);
 
   return (
     <aside className="filters-rail">
       <h3>Búsqueda actual</h3>
-      {searchItems.length === 0 ? (
+      {allSearchItems.length === 0 ? (
         <div className="rail-empty">
           A medida que respondas, los filtros van a ir apareciendo acá.
         </div>
       ) : (
         <div className="rail-stack">
+          {hiddenCount > 0 && (
+            <div className="rail-more">+{hiddenCount} filtros previos</div>
+          )}
           {searchItems.map((it) => (
             <div key={it.key} className="rail-chip">
               <span className="rail-chip-icon">{it.icon}</span>
@@ -202,13 +209,14 @@ function FiltersRail({
         </div>
       )}
 
-      <button
-        className="search-go"
-        disabled={!done || searching}
-        onClick={onSearch}
-      >
-        {searching ? 'Procesando…' : done ? 'Ver proceso' : 'Seguí respondiendo…'}
-      </button>
+      {showCta && done && !searching && (
+        <button
+          className="search-go"
+          onClick={onSearch}
+        >
+          Ver proceso
+        </button>
+      )}
     </aside>
   );
 }
@@ -979,6 +987,7 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
             done={done}
             onSearch={handleSearch}
             searching={searching}
+            showCta={viewStage === 'idle'}
           />
 
         </main>

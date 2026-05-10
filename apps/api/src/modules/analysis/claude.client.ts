@@ -11,6 +11,10 @@ const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 8192;
 const TIMEOUT_MS = 180_000;
 const MAX_RETRIES = 5;
+// Cap photos sent as image blocks. Anthropic accepts up to 100 images per
+// request; 50 covers typical zonaprop publications (often 30+ photos) with
+// headroom. Latency is not a concern here per product decision.
+const MAX_PHOTOS = 50;
 
 @Injectable()
 export class ClaudeClient {
@@ -26,8 +30,24 @@ export class ClaudeClient {
     });
   }
 
-  async analyzeProperty(scrapedData: unknown, url: string, environmentNarrative?: string): Promise<AnalysisReport> {
-    const userPrompt = buildUserPrompt(scrapedData, url, environmentNarrative);
+  async analyzeProperty(
+    scrapedData: unknown,
+    url: string,
+    imageUrls: string[],
+    environmentNarrative?: string,
+  ): Promise<AnalysisReport> {
+    const photos = imageUrls
+      .filter((u) => typeof u === 'string' && /^https?:\/\//.test(u))
+      .slice(0, MAX_PHOTOS);
+    const userPrompt = buildUserPrompt(scrapedData, url, photos.length, environmentNarrative);
+
+    const content: Anthropic.ContentBlockParam[] = [{ type: 'text', text: userPrompt }];
+    for (const photo of photos) {
+      content.push({
+        type: 'image',
+        source: { type: 'url', url: photo },
+      });
+    }
 
     const response = await this.client.messages.create({
       model: MODEL,
@@ -46,7 +66,7 @@ export class ClaudeClient {
           max_uses: 5,
         } satisfies Anthropic.WebSearchTool20250305,
       ],
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [{ role: 'user', content }],
     });
 
     const cache = response.usage as unknown as {

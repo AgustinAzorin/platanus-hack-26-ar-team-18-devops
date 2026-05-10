@@ -1,7 +1,7 @@
 export interface SearchFilters {
   neighborhoods: string[];        // ["Palermo","Villa Crespo"] or [] = no preference
-  price_max: number | null;       // monthly rent cap in ARS, null = no cap
-  price_currency: 'ARS' | 'USD' | null;
+  price_max: number | null;       // monthly rent cap, null = no cap
+  price_currency: 'ARS' | 'USD' | null; // defaults to ARS when null (most AR rentals are in pesos)
   min_rooms: number | null;       // ambientes
   max_rooms: number | null;
   must_have_features: string[];   // ["pet_friendly","balcony","subte_b"]

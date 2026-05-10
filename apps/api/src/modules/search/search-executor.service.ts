@@ -57,11 +57,11 @@ export class SearchExecutorService {
   }
 
   async execute(filters: SearchFilters): Promise<ExecutorOutput> {
-    if (filters.operation_type === 'alquiler') {
+    if (filters.operation_type === 'venta') {
       return {
         results: [],
         notice:
-          'La base de datos por ahora solo contiene propiedades en venta. Reformulá la búsqueda enfocada en venta o aclará el tipo de operación.',
+          'La base de datos por ahora solo contiene propiedades en alquiler. Reformulá la búsqueda enfocada en alquiler o aclará el tipo de operación.',
       };
     }
 

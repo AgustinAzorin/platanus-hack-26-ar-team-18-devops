@@ -30,10 +30,6 @@ function Topbar() {
         nueva búsqueda
       </div>
       <div className="right">
-        <div className="pill">
-          <span className="pulse" />
-          BOT ACTIVO · 3 búsquedas
-        </div>
         <a href="/onboarding" className="btn btn-ghost">Setup del bot</a>
         <a href="#" className="btn btn-acc">Conectar WhatsApp <span className="arrow">↗</span></a>
       </div>

@@ -69,6 +69,14 @@ main.search {
   gap: 8px;
 }
 
+.rail-more {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.06em;
+  padding: 2px 4px 2px;
+}
+
 .rail-chip {
   display: flex;
   align-items: center;

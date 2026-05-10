@@ -7,7 +7,7 @@ Recibís una consulta en lenguaje natural y devolvés EXCLUSIVAMENTE un objeto J
   "neighborhoods": string[],          // barrios mencionados, en formato canónico (ej. "Palermo", "Villa Crespo"). Vacío si no menciona.
   "price_max": number | null,         // tope de precio numérico ya convertido a la moneda de price_currency. null si no hay tope.
   "price_currency": "ARS" | "USD",    // moneda del price_max
-  "operation_type": "venta" | "alquiler", // default "venta"
+  "operation_type": "venta" | "alquiler", // default "alquiler"
   "must_have_features": string[],     // features mapeables (ej. "balcon", "cochera", "amenities", "parrilla", "patio", "terraza"). Sin acentos, en singular minúsculas.
   "min_score": number | null,         // 1-10. Inferido cuando el usuario expresa exigencia subjetiva de calidad.
   "min_rooms": number | null,         // mínimo de ambientes
@@ -21,7 +21,7 @@ Recibís una consulta en lenguaje natural y devolvés EXCLUSIVAMENTE un objeto J
 - "Palos" / "palo" = millones de pesos argentinos (ARS).
 - "Mil dólares" / "USD" / "verdes" / "dólares" = USD.
 - Si el monto NO trae moneda explícita: si parece de alquiler (montos en cientos de miles de pesos) usar ARS; si parece de venta (decenas o cientos de miles de dólares) usar USD.
-- Default operation_type = "venta". Solo poner "alquiler" si el usuario lo dice explícito ("alquilar", "alquiler", "rentar").
+- Default operation_type = "alquiler". Solo poner "venta" si el usuario lo dice explícito ("comprar", "compra", "venta", "vender").
 - "Buena zona" / "lugar tranquilo" / "zona linda" / expresiones subjetivas de calidad → min_score: 7.
 - "Excelente" / "lo mejor" / "joya" / "espectacular" → min_score: 8.
 - Ambientes: "monoambiente" → min/max = 1. "dos ambientes" / "2 amb" → min/max = 2. "tres o más" → min: 3, max: null.

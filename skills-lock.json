@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "skills/integrate-whatsapp/SKILL.md",
       "computedHash": "1d4eaeecdfaaff92d182706fe23d7e52a6cac775f7042a3a0835d776ff172a2c"
+    },
+    "nextjs-supabase-auth": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nextjs-supabase-auth/SKILL.md",
+      "computedHash": "f2f8b00877ed450e4b5d1e040b52c1c4d312ec2264c75d2248253814c2a9e9ba"
     }
   }
 }

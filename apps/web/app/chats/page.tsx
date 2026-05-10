@@ -3,14 +3,7 @@ import ChatsClient from './chats-client';
 
 export const dynamic = 'force-dynamic';
 
-interface ChatsPageProps {
-  searchParams: Promise<{ q?: string }>;
-}
-
-export default async function ChatsPage({ searchParams }: ChatsPageProps) {
-  const { q } = await searchParams;
-  const initialQuery = (q ?? '').trim();
-
+export default async function ChatsPage() {
   const [featured, chats] = await Promise.all([fetchFeaturedProperty(), fetchChats()]);
   const initialChatId = chats[0]?.id ?? null;
   const initialMessages = initialChatId ? await fetchMessages(initialChatId) : [];
@@ -20,7 +13,6 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
       chats={chats}
       initialChatId={initialChatId}
       initialMessages={initialMessages}
-      initialAiQuery={initialQuery}
     />
   );
 }

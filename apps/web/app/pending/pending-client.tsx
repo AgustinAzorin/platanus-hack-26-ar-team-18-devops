@@ -23,10 +23,6 @@ function Topbar({ count }: { count: number }) {
         {count > 0 ? `${count} esperando OK` : 'Todo al día'}
       </div>
       <div className="right">
-        <div className="pill">
-          <span className="pulse" />
-          BOT ACTIVO · 3 búsquedas
-        </div>
         <a href="/chats" className="btn btn-ghost">Ver chats</a>
       </div>
     </div>

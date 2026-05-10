@@ -97,6 +97,7 @@ export class AnalysisService {
       report = await this.claude.analyzeProperty(
         scrapedForClaude,
         fullUrl,
+        property.image_urls,
         environmentNarrative,
       );
     } catch (err) {

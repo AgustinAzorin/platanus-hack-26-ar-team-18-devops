@@ -187,10 +187,6 @@ export default function ApprovePage() {
             solicitudes del agente
           </div>
           <div className="right">
-            <div className="pill">
-              <span className="pulse" />
-              BOT ACTIVO · {remaining} pendiente{remaining !== 1 ? 's' : ''}
-            </div>
             <a href="/pending" className="btn btn-ghost">Ver detalle</a>
           </div>
         </div>

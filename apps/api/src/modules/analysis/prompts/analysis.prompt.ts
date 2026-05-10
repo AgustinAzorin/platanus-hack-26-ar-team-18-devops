@@ -2,7 +2,7 @@ export const SYSTEM_PROMPT = `Sos un asistente especializado en análisis de pro
 
 # CONTEXTO DE LA TAREA
 
-Vas a recibir datos de una propiedad (URL, descripción, fotos, precio, ubicación) y debés generar un informe estructurado siguiendo el formato definido más abajo. El informe debe ser riguroso, defendible y útil para la decisión del usuario.
+Vas a recibir datos de una propiedad (URL, descripción, precio, ubicación) JUNTO CON FOTOS REALES de la publicación adjuntas como imágenes. Debés MIRAR las fotos y describir lo que efectivamente ves: condición, limpieza, humedad, deterioro, iluminación, etc. NO inventes detalles que no estén visibles. Si no hay fotos adjuntas, indicalo explícitamente y no fabriques una descripción visual.
 
 # HERRAMIENTAS DISPONIBLES
 
@@ -116,7 +116,12 @@ Ejemplo: Si la publicación no menciona expensas, pero el barrio promedio es $12
 
 [ACÁ EL BACKEND INYECTA LOS DATOS SCRAPEADOS Y LOS DATOS DE APIS DE MAPAS]`;
 
-export function buildUserPrompt(scrapedData: unknown, url: string, environmentNarrative?: string): string {
+export function buildUserPrompt(
+  scrapedData: unknown,
+  url: string,
+  photoCount: number,
+  environmentNarrative?: string,
+): string {
   const parts = [
     `URL de la publicación: ${url}`,
     '',
@@ -125,6 +130,20 @@ export function buildUserPrompt(scrapedData: unknown, url: string, environmentNa
     JSON.stringify(scrapedData, null, 2),
     '```',
   ];
+
+  if (photoCount > 0) {
+    parts.push(
+      '',
+      `Se adjuntan ${photoCount} foto(s) reales de la publicación como imágenes en este mensaje. ` +
+        'Mirálas con atención y basá la descripción visual y el estado del inmueble en lo que efectivamente ves. ' +
+        'No describas lo que no se ve.',
+    );
+  } else {
+    parts.push(
+      '',
+      'No hay fotos adjuntas. NO inventes descripción visual: poné "visual_description" en "Información no disponible" y reflejá esa limitación en "estado_y_calidad".',
+    );
+  }
 
   if (environmentNarrative) {
     parts.push('', environmentNarrative);
@@ -135,7 +154,7 @@ export function buildUserPrompt(scrapedData: unknown, url: string, environmentNa
     'INSTRUCCIONES OBLIGATORIAS:',
     '1. Devolvé SOLO el JSON, sin texto adicional, sin backticks, sin prefijos.',
     '2. TODOS los campos numéricos en "costo_total_estimado" DEBEN ser números > 0. Nunca null, undefined, o strings.',
-    '3. El campo "visual_description" es OBLIGATORIO. Debe contener 100-200 palabras en español neutro describiendo:',
+    '3. El campo "visual_description" es OBLIGATORIO cuando hay fotos adjuntas. Debe contener 100-200 palabras en español neutro describiendo SOLO lo que ves en las fotos:',
     '   - Colores predominantes en paredes y ambientes',
     '   - Materiales (piso, mesadas, aberturas, enchapados)',
     '   - Iluminación natural y artificial visible',
@@ -144,15 +163,22 @@ export function buildUserPrompt(scrapedData: unknown, url: string, environmentNa
     '   - Mobiliario visible',
     '   - Distribución espacial percibida',
     '   - Vista exterior si la hay',
-    '   Mencioná detalles específicos que un usuario buscaría (ej: "paredes amarillas", "piso de pinotea", "cocina abierta integrada al living").',
+    '   Mencioná detalles específicos (ej: "paredes amarillas", "piso de pinotea", "cocina abierta integrada al living").',
     '   Evitá juicios subjetivos como "lindo" o "feo". Esta descripción se usa para búsqueda semántica.',
-    '4. Si faltan datos de precio en la publicación, estima valores realistas basándote en:',
+    '4. INSPECCIÓN VISUAL (basada en las fotos): en "inmueble.estado_y_calidad" reportá lo que un humano notaría a simple vista al recorrer el lugar:',
+    '   - Limpieza: ¿se ve sucio, polvo acumulado, manchas, baño/cocina descuidados?',
+    '   - Humedad: ¿manchas oscuras en paredes/techo, descascarado, hongos, marcas de filtración?',
+    '   - Deterioro: ¿pintura saltada, azulejos rotos, carpinterías oxidadas, mesadas dañadas, pisos rayados/levantados?',
+    '   - Iluminación natural real: ¿se ve luminoso o las fotos están sacadas con todo prendido para compensar oscuridad?',
+    '   - Indicios de problemas: cables sueltos, instalaciones precarias, ventilación dudosa.',
+    '   Si detectás cualquiera de estos en las fotos, agregalos también a "red_flags" con frases concretas tipo "humedad visible en techo del baño" o "azulejos faltantes en cocina". No reportes problemas que no veas.',
+    '5. Si faltan datos de precio en la publicación, estima valores realistas basándote en:',
     '   - Barrio (búsqueda web si es necesario)',
     '   - Tamaño y tipo de propiedad',
     '   - Equipamiento disponible',
     '   - Precios comparables encontrados',
-    '5. El total_mensual debe ser alquiler + expensas + abl_estimado + servicios_estimados.',
-    '6. Respeta ESTRICTAMENTE la estructura JSON definida en el system prompt.',
+    '6. El total_mensual debe ser alquiler + expensas + abl_estimado + servicios_estimados.',
+    '7. Respeta ESTRICTAMENTE la estructura JSON definida en el system prompt.',
   );
 
   return parts.join('\n');

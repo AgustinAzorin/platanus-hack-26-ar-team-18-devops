@@ -19,7 +19,6 @@ function Topbar({ count, fromAI }: { count: number; fromAI: boolean }) {
         {count} {fromAI ? 'informes IA' : 'propiedades'}
       </div>
       <div className="right">
-        <div className="pill"><span className="pulse" />BOT ACTIVO · 3 búsquedas</div>
         <a href="/home" className="btn btn-ghost">Nueva búsqueda</a>
       </div>
     </div>

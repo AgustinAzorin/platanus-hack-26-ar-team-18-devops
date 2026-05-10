@@ -71,7 +71,7 @@ interface AnalysisRow {
 const SELECT =
   'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, parking, description, description_summary';
 
-export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
+export async function fetchFeed(limit?: number): Promise<{ cards: FeedCard[]; summary: FeedSummary }> {
   const cards = await fetchAnalysisFeed(limit);
   const summary: FeedSummary = {
     total: cards.length,
@@ -86,14 +86,15 @@ export async function fetchFeed(limit = 12): Promise<{ cards: FeedCard[]; summar
   return { cards, summary };
 }
 
-async function fetchAnalysisFeed(limit: number): Promise<FeedCard[]> {
+async function fetchAnalysisFeed(limit?: number): Promise<FeedCard[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('analyses')
     .select('id, posting_id, score, report, created_at')
     .not('posting_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+    .order('created_at', { ascending: false });
+  if (limit !== undefined) query = query.limit(limit);
+  const { data, error } = await query;
 
   const rows = (data ?? []) as AnalysisRow[];
   if (error || rows.length === 0) {
