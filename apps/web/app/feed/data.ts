@@ -266,7 +266,7 @@ function buildTitle(p: PropiedadRow): string {
 }
 
 function formatPrice(p: PropiedadRow): string {
-  if (!p.price_value) return '—';
+  if (!p.price_value) return 'Consultar';
   const symbol = p.price_type === 'USD' ? 'USD ' : '$ ';
   const v = p.price_value;
   if (v >= 1000) return `${symbol}${formatK(v)}`;

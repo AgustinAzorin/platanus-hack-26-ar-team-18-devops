@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { gsap } from 'gsap';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import {
   Search, Sparkles,
   Mail, MessageCircle, MoreVertical, ArrowRight, Calendar, DollarSign, Clock,
@@ -120,6 +121,10 @@ export default function ChatsClient({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   // ── AI chat state ─────────────────────────────────────────
   const [aiMessages, setAiMessages] = useState<AiTurn[]>([]);
@@ -223,6 +228,26 @@ export default function ChatsClient({
     };
   }, []);
 
+  // useLayoutEffect (isomorphic): runs after DOM commit but BEFORE paint, so
+  // the very first frame the user sees already has GSAP's initial transform.
+  // Without this, useEffect fires after paint and the user sees a flash of
+  // the final position before the animation snaps back and replays.
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted || animatedRef.current) return;
+    animatedRef.current = true;
+    initAnimations();
+  }, [mounted]);
+
+  function initAnimations() {
+    gsap.defaults({ ease: 'power3.out' });
+    gsap.from('.side',        { x: -28, duration: 0.7 });
+    gsap.from('.topbar',      { y: -16, duration: 0.6, delay: 0.08 });
+    gsap.from('.convo',       { x: -22, duration: 0.55, ease: 'power2.out', stagger: 0.05, delay: 0.16 });
+    gsap.from('.thread-head', { y: -12, duration: 0.6, delay: 0.22 });
+    gsap.from('.msg',         { y: 22,  duration: 0.55, ease: 'power2.out', stagger: 0.06, delay: 0.32 });
+    gsap.from('.ctx',         { x: 32,  duration: 0.7, ease: 'power2.out', delay: 0.24 });
+  }
+
   // Auto-scroll the thread when AI messages change.
   useEffect(() => {
     const el = msgsRef.current;
@@ -320,20 +345,6 @@ export default function ChatsClient({
     await runAiTurn([...aiMessages, userTurn], aiFilters);
   }
 
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.defaults({ ease: 'power3.out' });
-
-      gsap.from('.side',   { x: -24, autoAlpha: 0, duration: 1.0 });
-      gsap.from('.topbar', { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.12 });
-      gsap.from('.convo', { x: -20, autoAlpha: 0, duration: 0.65, ease: 'power2.out', stagger: 0.06, delay: 0.28 });
-      gsap.from('.thread-head', { autoAlpha: 0, y: -10, duration: 0.7, delay: 0.4 });
-      gsap.from('.msg', { y: 18, autoAlpha: 0, duration: 0.55, ease: 'power2.out', stagger: 0.07, delay: 0.55 });
-      gsap.from('.ctx', { x: 32, autoAlpha: 0, duration: 0.85, ease: 'power2.out', delay: 0.35 });
-    });
-    return () => ctx.revert();
-  }, []);
-
   async function handleSend() {
     if (!activeChatId || !draft.trim() || sending) return;
     setSending(true);
@@ -357,6 +368,8 @@ export default function ChatsClient({
       setSending(false);
     }
   }
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">

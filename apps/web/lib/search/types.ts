@@ -51,8 +51,9 @@ export const EMPTY_PROFILE: ClientProfile = {
 export type ProfileUpdates = Partial<ClientProfile>;
 
 export interface ChatRequest {
-  messages: ChatTurn[];           // full conversation so far (stateless)
+  messages: ChatTurn[];           // typed user + assistant turns only (what the user "said")
   filters: SearchFilters;         // running collected filters
+  selected_pills?: string[];      // pills clicked since the last assistant response
 }
 
 export interface ChatResponse {

@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { gsap } from 'gsap';
 
 import AppSidebar from '../../components/app-sidebar';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 
 function Topbar() {
   return (
@@ -20,24 +22,24 @@ function Topbar() {
 }
 
 export default function DashboardPage() {
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const g = window as any;
-    if (g.gsap) { initAnimations(g.gsap); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js';
-    script.onload = () => initAnimations(g.gsap);
-    document.head.appendChild(script);
-    return () => { script.remove(); };
-  }, []);
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function initAnimations(gsap: any) {
+  useEffect(() => { setMounted(true); }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted || animatedRef.current) return;
+    animatedRef.current = true;
+    initAnimations();
+  }, [mounted]);
+
+  function initAnimations() {
     gsap.defaults({ ease: 'power3.out' });
 
-    gsap.from('.side',   { x: -24, autoAlpha: 0, duration: 0.7 });
-    gsap.from('.topbar', { y: -12, autoAlpha: 0, duration: 0.6, delay: 0.1 });
-    gsap.from('.js-fade', { autoAlpha: 0, y: 18, duration: 0.6, stagger: 0.08, delay: 0.2 });
+    // Transform-only entrance (never goes through opacity:0).
+    gsap.from('.side',    { x: -28, duration: 0.7 });
+    gsap.from('.topbar',  { y: -16, duration: 0.6, delay: 0.08 });
+    gsap.from('.js-fade', { y: 22,  duration: 0.6, stagger: 0.07, delay: 0.16 });
 
     gsap.from('.hist .bar',          { scaleY: 0, transformOrigin: 'bottom', duration: 0.7, stagger: 0.04, ease: 'power2.out', delay: 0.3 });
     gsap.from('.barlist .bar i',     { width: 0, duration: 0.9, stagger: 0.05, ease: 'power2.out', delay: 0.3 });
@@ -60,6 +62,8 @@ export default function DashboardPage() {
       });
     });
   }
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">

@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { gsap } from 'gsap';
 import { useRouter } from 'next/navigation';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import {
   ArrowRight, Sparkles, MapPin, DollarSign, Bed, Calendar,
   PawPrint, Home, UserCheck, ShieldCheck,
@@ -146,7 +148,15 @@ function buildProfileItems(profile: ClientProfile): RailItem[] {
   return out;
 }
 
-function FiltersRail({ filters, profile, done, onSearch, searching }: { filters: SearchFilters; profile: ClientProfile; done: boolean; onSearch: () => void; searching: boolean }) {
+function FiltersRail({
+  filters, profile, done, onSearch, searching,
+}: {
+  filters: SearchFilters;
+  profile: ClientProfile;
+  done: boolean;
+  onSearch: () => void;
+  searching: boolean;
+}) {
   const searchItems = buildSearchItems(filters);
   const profileItems = buildProfileItems(profile);
 
@@ -205,15 +215,25 @@ interface SearchClientProps {
   initialQuery: string;
 }
 
+/** Message that lives in the UI thread. Adds the optional suggestions/picked
+ *  bookkeeping that the wire ChatTurn doesn't carry. */
+interface UiMessage extends ChatTurn {
+  suggestions?: string[];
+  picked?: string;
+}
+
 export default function SearchClient({ initialQuery }: SearchClientProps) {
   const router = useRouter();
-  const [messages, setMessages] = useState<ChatTurn[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS);
   const [profile, setProfile] = useState<ClientProfile>(EMPTY_PROFILE);
+  // Pills clicked since the last assistant response — sent to the LLM next turn.
+  // The historical log lives in the thread (frozen + picked pills); the rail
+  // surfaces the *resolved* state (filters / profile) instead of raw selections.
+  const pendingPillsRef = useRef<string[]>([]);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [done, setDone] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -224,11 +244,23 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, thinking, suggestions.length]);
+  }, [messages.length, thinking]);
 
-  // No GSAP entrance animations here: the agent re-renders the page while
-  // tweens are still running, leaving elements stuck at autoAlpha:0. If we
-  // want fade-ins later, do them via CSS keyframes (independent from React state).
+  // Skip SSR for the animated content so the entrance has a clean canvas.
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted || animatedRef.current) return;
+    animatedRef.current = true;
+    gsap.defaults({ ease: 'power3.out' });
+    gsap.from('.side',          { x: -28, duration: 0.7 });
+    gsap.from('.topbar',        { y: -16, duration: 0.6, delay: 0.08 });
+    gsap.from('.search-thread', { y: 22,  duration: 0.65, delay: 0.18 });
+    gsap.from('.filters-rail',  { x: 32,  duration: 0.7, delay: 0.24 });
+  }, [mounted]);
 
   // Boot: if there's an initial query from /home, send it as the first user turn.
   useEffect(() => {
@@ -244,16 +276,23 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     void runTurn([{ role: 'user', content: initialQuery }], EMPTY_FILTERS);
   }, [initialQuery]);
 
-  async function runTurn(nextMessages: ChatTurn[], currentFilters: SearchFilters) {
+  async function runTurn(nextMessages: UiMessage[], currentFilters: SearchFilters) {
     setMessages(nextMessages);
     setThinking(true);
-    setSuggestions([]); // hide stale chips while waiting
     setError(null);
+    const pillsForThisTurn = pendingPillsRef.current;
+    pendingPillsRef.current = []; // consumed
     try {
+      // Strip UI-only fields before sending to the server.
+      const wireMessages: ChatTurn[] = nextMessages.map(({ role, content }) => ({ role, content }));
       const res = await fetch('/api/search/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: nextMessages, filters: currentFilters }),
+        body: JSON.stringify({
+          messages: wireMessages,
+          filters: currentFilters,
+          selected_pills: pillsForThisTurn,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -263,9 +302,13 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
       setFilters(data.filters);
       setProfile(data.profile ?? EMPTY_PROFILE);
       setDone(data.done);
-      setSuggestions(data.suggestions ?? []);
-      setMessages([...nextMessages, { role: 'assistant', content: data.message }]);
+      setMessages([
+        ...nextMessages,
+        { role: 'assistant', content: data.message, suggestions: data.suggestions ?? [] },
+      ]);
     } catch (err) {
+      // If the request failed, restore the pending pills so the user doesn't lose them.
+      pendingPillsRef.current = [...pillsForThisTurn, ...pendingPillsRef.current];
       setError(err instanceof Error ? err.message : 'Error en el agente');
     } finally {
       setThinking(false);
@@ -273,16 +316,27 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     }
   }
 
-  async function handleSend(textOverride?: string) {
-    const text = (textOverride ?? draft).trim();
+  async function handleSend() {
+    const text = draft.trim();
     if (!text || thinking) return;
     setDraft('');
-    setSuggestions([]); // user already chose; clear chips
     await runTurn([...messages, { role: 'user', content: text }], filters);
   }
 
+  /**
+   * Pill click: don't add to `messages` (the thread) as a user turn. Instead:
+   *   1. Mark the pill as `picked` on the last assistant message so the UI can
+   *      keep all pills visible but greyed out (with the chosen one accented).
+   *   2. Push the pill to the rail ("Tus elecciones") and the pending buffer.
+   *   3. Trigger a turn now so the assistant reacts to the selection.
+   */
   function handleSuggestion(text: string) {
-    void handleSend(text);
+    if (thinking) return;
+    pendingPillsRef.current = [...pendingPillsRef.current, text];
+    const withPicked = messages.map((m, i) =>
+      i === messages.length - 1 && m.role === 'assistant' ? { ...m, picked: text } : m,
+    );
+    void runTurn(withPicked, filters);
   }
 
   async function handleSearch() {
@@ -301,7 +355,10 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
     }
   }
 
-  const visibleMessages = useMemo(() => messages, [messages]);
+  // `messages` is already typed-only (pill clicks aren't added there). Render direct.
+  const visibleMessages = messages;
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">
@@ -325,28 +382,45 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
             </div>
 
             <div className="msgs" ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
-              {visibleMessages.map((m, idx) => (
-                <div key={idx} className={`msg ${m.role === 'user' ? 'out' : 'in'}`}>
-                  <div className="bubble">{m.content}</div>
-                </div>
-              ))}
+              {visibleMessages.map((m, idx) => {
+                const isLastAssistant = m.role === 'assistant'
+                  && idx === visibleMessages.length - 1;
+                const showPills = m.role === 'assistant'
+                  && (m.suggestions?.length ?? 0) > 0;
+                // Active = the most recent assistant turn AND we aren't waiting for a reply.
+                const pillsActive = isLastAssistant && !thinking && !done;
+                return (
+                  <div key={idx}>
+                    <div className={`msg ${m.role === 'user' ? 'out' : 'in'}`}>
+                      <div className="bubble">{m.content}</div>
+                    </div>
+                    {showPills && (
+                      <div className="quick-replies" role="group" aria-label="Respuestas sugeridas">
+                        {m.suggestions!.map((s, i) => {
+                          const isPicked = m.picked === s;
+                          const className = pillsActive
+                            ? `quick-reply${isPicked ? ' quick-reply-picked' : ''}`
+                            : `quick-reply quick-reply-frozen${isPicked ? ' quick-reply-picked' : ''}`;
+                          return (
+                            <button
+                              key={`${idx}-${i}-${s}`}
+                              type="button"
+                              className={className}
+                              disabled={!pillsActive}
+                              onClick={pillsActive ? () => handleSuggestion(s) : undefined}
+                            >
+                              {s}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {thinking && (
                 <div className="msg in">
                   <div className="thinking"><span /><span /><span /></div>
-                </div>
-              )}
-              {!thinking && !done && suggestions.length > 0 && (
-                <div className="quick-replies" role="group" aria-label="Respuestas sugeridas">
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={`${i}-${s}`}
-                      type="button"
-                      className="quick-reply"
-                      onClick={() => handleSuggestion(s)}
-                    >
-                      {s}
-                    </button>
-                  ))}
                 </div>
               )}
               {error && (
@@ -382,7 +456,13 @@ export default function SearchClient({ initialQuery }: SearchClientProps) {
             </div>
           </section>
 
-          <FiltersRail filters={filters} profile={profile} done={done} onSearch={handleSearch} searching={searching} />
+          <FiltersRail
+            filters={filters}
+            profile={profile}
+            done={done}
+            onSearch={handleSearch}
+            searching={searching}
+          />
 
         </main>
       </div>

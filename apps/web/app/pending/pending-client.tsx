@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effect';
 import { flushSync } from 'react-dom';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
@@ -47,6 +48,8 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const dragRef = useRef({ startX: 0, active: false });
   const noBtnRef = useRef<HTMLButtonElement>(null);
   const siBtnRef = useRef<HTMLButtonElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const animatedRef = useRef(false);
 
   function setBtnIntensity(btn: HTMLButtonElement | null, intensity: number) {
     if (!btn) return;
@@ -69,13 +72,17 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
       .to(btn, { scale: 1,    duration: 0.22, ease: 'power2.out' });
   }
 
-  useEffect(() => {
+  useEffect(() => { setMounted(true); }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!mounted || animatedRef.current) return;
+    animatedRef.current = true;
     gsap.defaults({ ease: 'power3.out' });
-    gsap.from('.side',       { x: -24, autoAlpha: 0, duration: 1.0 });
-    gsap.from('.topbar',     { y: -12, autoAlpha: 0, duration: 0.85, delay: 0.15 });
-    gsap.from('.sw-scene',   { autoAlpha: 0, y: 40, scale: 0.97, duration: 0.9, delay: 0.3, ease: 'back.out(1.2)' });
-    gsap.from('.sw-actions', { autoAlpha: 0, y: 24,  duration: 0.7,  delay: 0.55 });
-  }, []);
+    gsap.from('.side',       { x: -28, duration: 0.7 });
+    gsap.from('.topbar',     { y: -16, duration: 0.6, delay: 0.08 });
+    gsap.from('.sw-scene',   { y: 36, scale: 0.96, duration: 0.7, ease: 'back.out(1.3)', delay: 0.2 });
+    gsap.from('.sw-actions', { y: 22, duration: 0.6, delay: 0.4 });
+  }, [mounted]);
 
   function onDragStart(e: React.PointerEvent<HTMLDivElement>) {
     if (busy || cards.length === 0) return;
@@ -147,6 +154,8 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const reversed = [...visible].reverse();
   const front    = cards[0];
   const totalOff = (visible.length - 1) * CARD_OFF;
+
+  if (!mounted) return <div className="app" />;
 
   return (
     <div className="app">
