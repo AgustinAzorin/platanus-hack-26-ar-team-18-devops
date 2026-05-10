@@ -223,10 +223,11 @@ export class SearchExecutorService {
     // Embed the free_text_query
     const queryEmbedding = await this.voyage.embed(freeTextQuery, 'query');
 
-    // Convert embedding to string format for Supabase RPC or raw query
-    // Using raw SQL with pgvector <==> operator for cosine similarity
+    // Convert embedding array to pgvector string format: "[0.1, 0.2, ...]"
+    const embeddingString = `[${queryEmbedding.join(',')}]`;
+
     const { data, error } = await this.supabase.admin.rpc('search_analyses_by_embedding', {
-      query_embedding: queryEmbedding,
+      query_embedding: embeddingString,
       url_list: urls,
       min_score: minScore ?? 1,
       limit_results: MAX_RESULTS,
