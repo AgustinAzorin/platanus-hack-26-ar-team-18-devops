@@ -1,5 +1,5 @@
 {
-  "project-name": "<FILL THIS>",
-  "project-oneliner-spanish": "<FILL THIS>",
-  "project-description-spanish": "<FILL THIS>"
+  "project-name": "Casa fast",
+  "project-oneliner-spanish": "Encuentra tu hogar ideal en minutos con Casa Fast: análisis de mercado, recomendaciones personalizadas y concreta visitas al instante.",
+  "deploy-url" : "https://casita-fast.vercel.app"
 }
