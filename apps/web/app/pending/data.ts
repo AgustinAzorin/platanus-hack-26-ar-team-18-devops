@@ -14,6 +14,7 @@ export interface CardData {
   summary: string | null;
   imgUrl: string | null;
   details: string;
+  visitDate: string;
   urgent?: boolean;
 }
 
@@ -35,15 +36,75 @@ interface PropiedadRow {
   description_summary?: string | null;
 }
 
+interface AnalysisRow {
+  posting_id: string | null;
+  url: string | null;
+  scraped_data: Record<string, unknown> | null;
+  report: Record<string, unknown> | null;
+  score: number | null;
+  created_at: string | null;
+}
+
 const TYPES = ['VISITA A CONFIRMAR', 'MENSAJE POR APROBAR', 'PROPIEDAD ENCONTRADA', 'SOBRE PRESUPUESTO'];
+const MOCK_VISIT_DATES = [
+  'Mar 12/05 · 18:00',
+  'Mié 13/05 · 17:30',
+  'Jue 14/05 · 19:00',
+  'Vie 15/05 · 16:30',
+  'Sáb 16/05 · 11:00',
+] as const;
 
 const FULL_SELECT =
   'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, description, description_summary';
 const FALLBACK_SELECT =
   'posting_id, url, image_urls, address, neighborhood, city, price_value, price_type, expenses_value, square_meters_area, rooms, bedrooms, bathrooms, description';
 
-export async function fetchPendingCards(limit = 8): Promise<CardData[]> {
+export async function fetchPendingCards(limit = 5): Promise<CardData[]> {
   const supabase = await createClient();
+  const { data: analysisRows, error: analysisError } = await supabase
+    .from('analyses')
+    .select('posting_id, url, scraped_data, report, score, created_at')
+    .not('posting_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (!analysisError && analysisRows && analysisRows.length > 0) {
+    const analyses = analysisRows as AnalysisRow[];
+    const postingIds = analyses.map((a) => a.posting_id).filter(Boolean) as string[];
+    const propsByPostingId = await fetchPropertiesByPostingId(postingIds);
+    return analyses.slice(0, 5).map((a, i) => {
+      const prop = a.posting_id ? propsByPostingId.get(a.posting_id) ?? null : null;
+      const fallback = propertyFromAnalysis(a);
+      const p = prop ?? fallback;
+      const summary = typeof a.report?.resumen_ejecutivo === 'string'
+        ? a.report.resumen_ejecutivo.trim()
+        : null;
+      const score = typeof a.report?.score === 'number'
+        ? a.report.score * 10
+        : (a.score ? a.score * 10 : computeScore(p));
+
+      return {
+        id: a.posting_id ?? `analysis-${i}`,
+        title: buildTitle(p),
+        address: p.address ?? '—',
+        neighborhood: p.neighborhood ?? p.city ?? '',
+        source: sourceLabel(a.url ?? p.url),
+        sourceUrl: buildSourceUrl(a.url ?? p.url),
+        score: Math.max(0, Math.min(98, Math.round(score))),
+        scoreWarm: score < 80,
+        type: TYPES[i % TYPES.length] ?? 'PROPIEDAD ENCONTRADA',
+        description: cleanDescription(p.description ?? ''),
+        summary: summary || p.description_summary || null,
+        imgUrl: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls[0]! : null,
+        details: buildDetails(p),
+        visitDate: MOCK_VISIT_DATES[i % MOCK_VISIT_DATES.length]!,
+        urgent: i === 0,
+      };
+    });
+  }
+
+  if (analysisError) console.warn('[pending] analyses mocks unavailable:', analysisError.message);
+
   let { data, error } = await supabase
     .from('propiedades')
     .select(FULL_SELECT)
@@ -86,9 +147,57 @@ export async function fetchPendingCards(limit = 8): Promise<CardData[]> {
       summary: p.description_summary && p.description_summary.trim() ? p.description_summary.trim() : null,
       imgUrl: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls[0]! : null,
       details: buildDetails(p),
+      visitDate: MOCK_VISIT_DATES[i % MOCK_VISIT_DATES.length]!,
       urgent: i === 0,
     };
   });
+}
+
+async function fetchPropertiesByPostingId(postingIds: string[]): Promise<Map<string, PropiedadRow>> {
+  if (postingIds.length === 0) return new Map();
+  const supabase = await createClient();
+  let { data, error } = await supabase
+    .from('propiedades')
+    .select(FULL_SELECT)
+    .in('posting_id', postingIds);
+
+  if (error) {
+    const fallback = await supabase
+      .from('propiedades')
+      .select(FALLBACK_SELECT)
+      .in('posting_id', postingIds);
+    data = fallback.data as typeof data;
+    error = fallback.error;
+  }
+
+  const out = new Map<string, PropiedadRow>();
+  if (error || !data) return out;
+  for (const p of data as PropiedadRow[]) out.set(p.posting_id, p);
+  return out;
+}
+
+function propertyFromAnalysis(a: AnalysisRow): PropiedadRow {
+  const s = a.scraped_data ?? {};
+  const getString = (key: string) => (typeof s[key] === 'string' ? s[key] as string : null);
+  const getNumber = (key: string) => (typeof s[key] === 'number' ? s[key] as number : null);
+  const imageUrls = s.image_urls;
+  return {
+    posting_id: a.posting_id ?? `analysis-${a.created_at ?? ''}`,
+    url: a.url ?? getString('url'),
+    image_urls: Array.isArray(imageUrls) ? imageUrls.filter((u): u is string => typeof u === 'string') : null,
+    address: getString('address'),
+    neighborhood: getString('neighborhood'),
+    city: getString('city'),
+    price_value: getNumber('price_value'),
+    price_type: getString('price_type'),
+    expenses_value: getNumber('expenses_value'),
+    square_meters_area: getNumber('square_meters_area'),
+    rooms: getNumber('rooms'),
+    bedrooms: getNumber('bedrooms'),
+    bathrooms: getNumber('bathrooms'),
+    description: getString('description'),
+    description_summary: null,
+  };
 }
 
 function buildTitle(p: PropiedadRow): string {
@@ -119,4 +228,18 @@ function cleanDescription(raw: string): string {
 
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('es-AR').format(Math.round(n));
+}
+
+function buildSourceUrl(url: string | null): string {
+  if (!url) return 'https://www.zonaprop.com.ar';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `https://www.argenprop.com${url}`;
+  return url;
+}
+
+function sourceLabel(url: string | null): string {
+  if (!url) return 'Zonaprop';
+  if (url.includes('zonaprop')) return 'Zonaprop';
+  if (url.includes('argenprop')) return 'Argenprop';
+  return 'Portal';
 }

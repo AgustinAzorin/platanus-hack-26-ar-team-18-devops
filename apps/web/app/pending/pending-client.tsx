@@ -5,7 +5,7 @@ import { useIsomorphicLayoutEffect } from '../../lib/use-isomorphic-layout-effec
 import { flushSync } from 'react-dom';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import { ExternalLink, Check, X } from 'lucide-react';
+import { ExternalLink, Check, X, ChevronDown } from 'lucide-react';
 
 import type { CardData } from './data';
 import AppSidebar from '../../components/app-sidebar';
@@ -44,6 +44,7 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const dragRef = useRef({ startX: 0, active: false });
   const noBtnRef = useRef<HTMLButtonElement>(null);
   const siBtnRef = useRef<HTMLButtonElement>(null);
+  const [expandedSummaryCardId, setExpandedSummaryCardId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const animatedRef = useRef(false);
 
@@ -149,6 +150,7 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
   const visible  = cards.slice(0, MAX_VIS);
   const reversed = [...visible].reverse();
   const front    = cards[0];
+  const summaryExpanded = front ? expandedSummaryCardId === front.id : false;
   const totalOff = (visible.length - 1) * CARD_OFF;
 
   if (!mounted) return <div className="app" />;
@@ -274,11 +276,27 @@ export default function PendingClient({ initialCards }: PendingClientProps) {
                 {/* Summary on the right */}
                 {front && (
                   <aside className="sw-desc-panel">
+                    <div className="sw-date-block">
+                      <span>Visita propuesta</span>
+                      <strong>{front.visitDate}</strong>
+                    </div>
                     <div className="sw-desc-label">
                       <span className="sw-ai-dot" />
                       Resumen IA
                     </div>
-                    <p className="sw-summary">{front.summary ?? front.description}</p>
+                    <div className="sw-summary-wrap">
+                      <p className={`sw-summary${summaryExpanded ? ' is-open' : ''}`}>
+                        {front.summary ?? front.description}
+                      </p>
+                      <button
+                        type="button"
+                        className={`sw-summary-toggle${summaryExpanded ? ' is-open' : ''}`}
+                        onClick={() => setExpandedSummaryCardId(summaryExpanded ? null : front.id)}
+                      >
+                        <ChevronDown size={15} strokeWidth={SW} />
+                        {summaryExpanded ? 'Ver menos' : 'Ver análisis completo'}
+                      </button>
+                    </div>
                   </aside>
                 )}
               </>

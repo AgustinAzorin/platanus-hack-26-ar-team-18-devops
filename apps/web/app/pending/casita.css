@@ -624,14 +624,89 @@ main.pend {
   background: var(--acc);
   box-shadow: 0 0 0 4px oklch(0.92 0.205 116 / 0.15);
 }
+.sw-date-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 2px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.sw-date-block span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.sw-date-block strong {
+  color: var(--acc);
+  font-size: 34px;
+  line-height: 0.95;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
 .sw-desc-panel p {
   margin: 0;
+}
+.sw-summary-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sw-summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--fg-2);
+  cursor: pointer;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  user-select: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  align-self: flex-start;
+  transition: color 140ms, border-color 140ms, background 140ms;
+}
+.sw-summary-toggle:hover {
+  color: var(--fg);
+  border-color: var(--line-2);
+  background: var(--bg-1);
+}
+.sw-summary-toggle svg {
+  color: var(--acc);
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+.sw-summary-toggle.is-open svg {
+  transform: rotate(180deg);
 }
 .sw-desc-panel .sw-summary {
   font-size: 14px;
   color: var(--fg);
   line-height: 1.55;
   letter-spacing: -0.005em;
+  max-height: 118px;
+  overflow: hidden;
+  position: relative;
+}
+.sw-desc-panel .sw-summary:not(.is-open)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42px;
+  background: linear-gradient(to bottom, oklch(0 0 0 / 0), var(--bg) 92%);
+  pointer-events: none;
+}
+.sw-desc-panel .sw-summary.is-open {
+  max-height: none;
+  overflow: visible;
 }
 .sw-desc-panel .sw-raw {
   font-size: 12px;
